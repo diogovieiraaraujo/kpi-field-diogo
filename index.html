@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Relatório de Performance - Infracommerce</title>
+    <link rel="icon" type="image/jpeg" href="ico.png">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.1.0/dist/chartjs-plugin-datalabels.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+    <div id="statusLog">Aguardando dados...</div>
+
+    <header>
+        <div class="header-brand">
+            <img src="logo.png" alt="Logo" onerror="this.style.display='none'; document.getElementById('fb-logo').style.display='block';">
+            <div id="fb-logo" style="display:none; font-weight:800; font-size:1.5rem;"><span style="color:var(--text-main);">INFRA</span><span style="color:var(--brand-accent);">COMMERCE</span></div>
+            <div class="header-title"><h1>Dashboard de Field Services</h1><p>Performance & SLA</p></div>
+        </div>
+        <div class="header-controls-wrapper">
+            <div class="header-actions">
+                <button class="btn-action btn-theme" onclick="toggleTheme()"><span id="themeIcon">☀️</span> Tema</button>
+                <input type="file" id="csvInput" accept=".csv" onchange="handleFileSelect(event)">
+                <button class="btn-action" onclick="document.getElementById('csvInput').click()"><span>📂</span> Importar</button>
+                <button class="btn-action btn-export" onclick="downloadCSV()"><span>⬇️</span> Exportar</button>
+            </div>
+            <div style="text-align: right; font-size: 0.75rem; color: var(--text-muted); margin-top: 5px;">Atualizado: <span id="currentDate"></span></div>
+        </div>
+    </header>
+
+    <div class="tab-nav">
+        <button class="tab-button active" onclick="openTab(event, 'tab-mensal')">Análise Mensal</button>
+        <button class="tab-button" onclick="openTab(event, 'tab-geral')">Visão Geral</button>
+        <button class="tab-button" onclick="openTab(event, 'tab-equipe')">Equipe & Unidades</button>
+        <button class="tab-button" onclick="openTab(event, 'tab-status')">Status & Prazos</button>
+    </div>
+
+    <div id="tab-mensal" class="tab-content active">
+        <div class="controls">
+            <div class="control-group"><label>Ano de Referência</label><select id="yearSelect" onchange="updateMonthSelect()"></select></div>
+            <div class="control-group"><label>Mês de Referência</label><select id="monthSelect" onchange="updateMonthlyView()"></select></div>
+        </div>
+        
+        <div class="kpi-grid">
+            <div class="kpi-card"><div class="kpi-title">Total no Mês</div><div class="kpi-value" id="monthlyTotal">-</div></div>
+            <div class="kpi-card"><div class="kpi-title">SLA do Mês</div><div class="kpi-value" id="monthlySLA">-</div><div class="kpi-sub">% Dentro do Prazo</div></div>
+            <div class="kpi-card"><div class="kpi-title">TMA do Mês</div><div class="kpi-value" id="monthlyTMA">-</div><div class="kpi-sub">Tempo Médio</div></div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-container"><div class="chart-header"><span>Volume Diário</span><button class="btn-expand" onclick="openFullscreenMode(0)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header"><span>SLA (Mês)</span><button class="btn-expand" onclick="openFullscreenMode(1)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlySlaChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header"><span>Status</span><button class="btn-expand" onclick="openFullscreenMode(2)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyStatusChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header"><span>Tipos</span><button class="btn-expand" onclick="openFullscreenMode(3)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyTypeChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header"><span>Top Unidades</span><button class="btn-expand" onclick="openFullscreenMode(4)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyUnitsChart"></canvas></div></div>
+            <div class="chart-container full-width"><div class="chart-header"><span>Analistas x Unidade</span><button class="btn-expand" onclick="openFullscreenMode(5)">⛶</button></div>
+                <div class="chart-wrapper-inner" style="height: 400px; padding-right: 30px;"><canvas id="monthlyAssigneeChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="perf-container"><div class="perf-header">Performance Analista <button class="btn-expand" style="float:right;" onclick="openFullscreenMode(6)">⛶</button></div><div class="perf-table-wrapper"><table class="perf-table" id="tableAssignee"><thead><tr><th>Analista</th><th>Tickets</th><th>SLA (%)</th><th>TMA</th></tr></thead><tbody></tbody></table></div></div>
+        <div class="perf-container"><div class="perf-header">Performance Unidade <button class="btn-expand" style="float:right;" onclick="openFullscreenMode(7)">⛶</button></div><div class="perf-table-wrapper"><table class="perf-table" id="tableUnit"><thead><tr><th>Unidade</th><th>Tickets</th><th>SLA (%)</th><th>TMA</th></tr></thead><tbody></tbody></table></div></div>
+    </div>
+
+    <div id="tab-geral" class="tab-content">
+        <div class="kpi-grid">
+            <div class="kpi-card"><div class="kpi-title">Total Histórico</div><div class="kpi-value" id="kpiTotal">-</div></div>
+            <div class="kpi-card"><div class="kpi-title">SLA Geral</div><div class="kpi-value" id="kpiSLA" style="color:var(--warning)">-</div></div>
+            <div class="kpi-card"><div class="kpi-title">TMA Geral</div><div class="kpi-value" id="kpiTMA" style="color:var(--success)">-</div></div>
+            <div class="kpi-card"><div class="kpi-title">Maior Demanda</div><div class="kpi-value" id="kpiLocation" style="color:var(--text-accent); font-size:1.6rem;">-</div></div>
+        </div>
+        <div class="charts-grid single-col"><div class="chart-container"><div class="chart-header">Evolução de Chamados</div><div class="chart-wrapper-inner"><canvas id="trendChart"></canvas></div></div></div>
+    </div>
+    <div id="tab-equipe" class="tab-content">
+        <div class="charts-grid">
+            <div class="chart-container full-width"><div class="chart-header">Demandas por Unidade</div><div class="chart-wrapper-inner"><canvas id="locationChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header">Top Analistas</div><div class="chart-wrapper-inner"><canvas id="assigneeChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header">Tipos de Solicitação</div><div class="chart-wrapper-inner"><canvas id="typeChart"></canvas></div></div>
+        </div>
+    </div>
+    <div id="tab-status" class="tab-content">
+        <div class="charts-grid">
+            <div class="chart-container"><div class="chart-header">Cumprimento de Prazos</div><div class="chart-wrapper-inner"><canvas id="slaChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header">Distribuição por Status</div><div class="chart-wrapper-inner"><canvas id="statusChart"></canvas></div></div>
+        </div>
+    </div>
+    <div class="footer">&copy; 2025 Infracommerce</div>
+</div>
+
+<div id="fsModal" class="fs-modal">
+    <button class="fs-nav-btn fs-prev" onclick="changeFullscreenChart(-1)">&#10094;</button>
+    <button class="fs-nav-btn fs-next" onclick="changeFullscreenChart(1)">&#10095;</button>
+    <div class="fs-content">
+        <div class="fs-header"><span id="fsChartTitle">Detalhe</span><button class="fs-close-btn" onclick="closeFullscreenMode()">&times;</button></div>
+        <div class="fs-canvas-wrapper" id="fsCanvasWrapper" style="padding-right: 40px;"><canvas id="fsCanvas"></canvas></div>
+        <div class="fs-table-container perf-table-wrapper" id="fsTableWrapper"><table class="perf-table" id="fsTable"><thead></thead><tbody></tbody></table></div>
+        <img src="logo.png" class="fs-logo" alt="Logo FS">
+        <div id="fsFooterMsg" class="fs-footer-msg">Você chegou ao fim da apresentação.</div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
