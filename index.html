@@ -9,10 +9,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.1.0/dist/chartjs-plugin-datalabels.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="light-mode">
 
 <div class="container">
     <div id="statusLog">Aguardando dados...</div>
@@ -25,12 +24,11 @@
         </div>
         <div class="header-controls-wrapper">
             <div class="header-actions">
-                <button class="btn-action btn-theme" onclick="toggleTheme()"><span id="themeIcon">☀️</span> Tema</button>
+                <button class="btn-action btn-theme" onclick="toggleTheme()"><span id="themeIcon">🌙</span> Tema</button>
                 <input type="file" id="csvInput" accept=".csv" onchange="handleFileSelect(event)">
-                <button class="btn-action" onclick="document.getElementById('csvInput').click()"><span>📂</span> Importar</button>
                 <button class="btn-action btn-export" onclick="downloadCSV()"><span>⬇️</span> Exportar</button>
             </div>
-            <div style="text-align: right; font-size: 0.75rem; color: var(--text-muted); margin-top: 5px;">Atualizado: <span id="currentDate"></span></div>
+            <div style="text-align: right; font-size: 0.75rem; color: var(--text-muted); margin-top: 5px;">Base Relatório JIRA: <span id="currentDate"></span></div>
         </div>
     </header>
 
@@ -48,31 +46,49 @@
         </div>
         
         <div class="kpi-grid">
-            <div class="kpi-card"><div class="kpi-title">Total no Mês</div><div class="kpi-value" id="monthlyTotal">-</div></div>
+            <div class="kpi-card"><div class="kpi-title">Entregas no Mês</div><div class="kpi-value" id="monthlyTotal">-</div></div>
             <div class="kpi-card"><div class="kpi-title">SLA do Mês</div><div class="kpi-value" id="monthlySLA">-</div><div class="kpi-sub">% Dentro do Prazo</div></div>
-            <div class="kpi-card"><div class="kpi-title">TMA do Mês</div><div class="kpi-value" id="monthlyTMA">-</div><div class="kpi-sub">Tempo Médio</div></div>
+            <div class="kpi-card"><div class="kpi-title">TMA do Mês</div><div class="kpi-value" id="monthlySMA">-</div><div class="kpi-sub">Tempo Médio</div></div>
         </div>
 
         <div class="charts-grid">
-            <div class="chart-container"><div class="chart-header"><span>Volume Diário</span><button class="btn-expand" onclick="openFullscreenMode(0)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyChart"></canvas></div></div>
-            <div class="chart-container"><div class="chart-header"><span>SLA (Mês)</span><button class="btn-expand" onclick="openFullscreenMode(1)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlySlaChart"></canvas></div></div>
-            <div class="chart-container"><div class="chart-header"><span>Status</span><button class="btn-expand" onclick="openFullscreenMode(2)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyStatusChart"></canvas></div></div>
-            <div class="chart-container"><div class="chart-header"><span>Tipos</span><button class="btn-expand" onclick="openFullscreenMode(3)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyTypeChart"></canvas></div></div>
-            <div class="chart-container"><div class="chart-header"><span>Top Unidades</span><button class="btn-expand" onclick="openFullscreenMode(4)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyUnitsChart"></canvas></div></div>
-            <div class="chart-container full-width"><div class="chart-header"><span>Analistas x Unidade</span><button class="btn-expand" onclick="openFullscreenMode(5)">⛶</button></div>
+            <div class="chart-container"><div class="chart-header"><span>Volume de Aberturas</span><button class="btn-expand" onclick="openFullscreenMode(0)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header"><span>SLA (Entregas)</span><button class="btn-expand" onclick="openFullscreenMode(1)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlySlaChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header"><span>Backlog (Status do Mês)</span><button class="btn-expand" onclick="openFullscreenMode(2)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyStatusChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header"><span>Tipos (Demanda)</span><button class="btn-expand" onclick="openFullscreenMode(3)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyTypeChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header"><span>Top Unidades (Entregas)</span><button class="btn-expand" onclick="openFullscreenMode(4)">⛶</button></div><div class="chart-wrapper-inner"><canvas id="monthlyUnitsChart"></canvas></div></div>
+            <div class="chart-container full-width"><div class="chart-header"><span>Analistas x Unidade (Entregas)</span><button class="btn-expand" onclick="openFullscreenMode(5)">⛶</button></div>
                 <div class="chart-wrapper-inner" style="height: 400px; padding-right: 30px;"><canvas id="monthlyAssigneeChart"></canvas></div>
             </div>
         </div>
 
-        <div class="perf-container"><div class="perf-header">Performance Analista <button class="btn-expand" style="float:right;" onclick="openFullscreenMode(6)">⛶</button></div><div class="perf-table-wrapper"><table class="perf-table" id="tableAssignee"><thead><tr><th>Analista</th><th>Tickets</th><th>SLA (%)</th><th>TMA</th></tr></thead><tbody></tbody></table></div></div>
-        <div class="perf-container"><div class="perf-header">Performance Unidade <button class="btn-expand" style="float:right;" onclick="openFullscreenMode(7)">⛶</button></div><div class="perf-table-wrapper"><table class="perf-table" id="tableUnit"><thead><tr><th>Unidade</th><th>Tickets</th><th>SLA (%)</th><th>TMA</th></tr></thead><tbody></tbody></table></div></div>
+        <div class="perf-container">
+            <div class="perf-header">Performance Analista (Entregas & Insights)<button class="btn-expand" style="float:right;" onclick="openFullscreenMode(6)">⛶</button></div>
+            <div class="perf-table-wrapper">
+                <table class="perf-table" id="tableAssignee">
+                    <thead>
+                        <tr>
+                            <th>Analista</th>
+                            <th>Tickets</th>
+                            <th>SLA (%)</th>
+                            <th>TMA</th>
+                            <th>Diagnóstico</th>
+                            <th>Ação Sugerida</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="perf-container"><div class="perf-header">Performance Unidade (Entregas)<button class="btn-expand" style="float:right;" onclick="openFullscreenMode(7)">⛶</button></div><div class="perf-table-wrapper"><table class="perf-table" id="tableUnit"><thead><tr><th>Unidade</th><th>Tickets</th><th>SLA (%)</th><th>TMA</th></tr></thead><tbody></tbody></table></div></div>
     </div>
 
     <div id="tab-geral" class="tab-content">
         <div class="kpi-grid">
             <div class="kpi-card"><div class="kpi-title">Total Histórico</div><div class="kpi-value" id="kpiTotal">-</div></div>
             <div class="kpi-card"><div class="kpi-title">SLA Geral</div><div class="kpi-value" id="kpiSLA" style="color:var(--warning)">-</div></div>
-            <div class="kpi-card"><div class="kpi-title">TMA Geral</div><div class="kpi-value" id="kpiTMA" style="color:var(--success)">-</div></div>
+            <div class="kpi-card"><div class="kpi-title">TMA Geral</div><div class="kpi-value" id="kpiSMA" style="color:var(--success)">-</div></div>
             <div class="kpi-card"><div class="kpi-title">Maior Demanda</div><div class="kpi-value" id="kpiLocation" style="color:var(--text-accent); font-size:1.6rem;">-</div></div>
         </div>
         <div class="charts-grid single-col"><div class="chart-container"><div class="chart-header">Evolução de Chamados</div><div class="chart-wrapper-inner"><canvas id="trendChart"></canvas></div></div></div>
