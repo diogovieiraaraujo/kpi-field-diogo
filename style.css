@@ -52,14 +52,13 @@ body { font-family: 'Montserrat', sans-serif; background-color: var(--bg-body); 
     font-weight: 800;
 }
 
-/* CARDS DE INSIGHT DA EQUIPE (NOVO) */
+/* CARDS DE INSIGHT DA EQUIPE */
 .insight-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 20px;
     padding: 10px 0;
 }
-
 .insight-card {
     background-color: var(--bg-body);
     border: 1px solid var(--border-color);
@@ -70,56 +69,15 @@ body { font-family: 'Montserrat', sans-serif; background-color: var(--bg-body); 
     gap: 10px;
     transition: transform 0.2s, box-shadow 0.2s;
 }
-
-.insight-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    border-color: var(--brand-accent);
-}
-
-.ic-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 8px;
-    margin-bottom: 5px;
-}
-
-.ic-name {
-    font-weight: 800;
-    font-size: 1rem;
-    color: var(--text-main);
-}
-
-.ic-metrics {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    font-weight: 600;
-    background: rgba(134,128,177,0.1);
-    padding: 6px;
-    border-radius: 4px;
-}
-
-.ic-section {
-    font-size: 0.85rem;
-    line-height: 1.4;
-}
-
-.ic-label {
-    font-weight: 700;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    margin-bottom: 2px;
-    display: block;
-}
-
+.insight-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); border-color: var(--brand-accent); }
+.ic-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 5px; }
+.ic-name { font-weight: 800; font-size: 1rem; color: var(--text-main); }
+.ic-metrics { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; background: rgba(134,128,177,0.1); padding: 6px; border-radius: 4px; }
+.ic-section { font-size: 0.85rem; line-height: 1.4; }
+.ic-label { font-weight: 700; font-size: 0.7rem; text-transform: uppercase; margin-bottom: 2px; display: block; }
 .ic-strong { color: var(--success); }
 .ic-weak { color: var(--danger); }
 .ic-action { color: var(--brand-blue); font-style: italic; }
-
 
 /* LOG */
 #statusLog { background: #d1e7dd; color: #0f5132; padding: 10px; border-radius: 6px; margin-bottom: 15px; font-size: 0.85rem; border: 1px solid #badbcc; display: none; text-align: center; }
@@ -173,15 +131,6 @@ table.perf-table td { padding: 12px; border-bottom: 1px solid var(--border-color
 .sla-ok { background: rgba(0, 200, 83, 0.15); color: var(--success); } 
 .sla-nok { background: rgba(255, 82, 82, 0.15); color: var(--danger); }
 .footer { text-align: center; padding: 30px; color: var(--text-muted); font-size: 0.8rem; border-top: 1px solid var(--border-color); margin-top: 20px; }
-
-/* AJUSTES PARA TEXTO DE INSIGHTS NA TABELA */
-table.perf-table td:nth-child(5), /* Coluna Diagnóstico */
-table.perf-table td:nth-child(6)  /* Coluna Ação */ {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    max-width: 200px;
-    line-height: 1.4;
-}
 
 /* RESPONSIVIDADE */
 @media (max-width: 900px) {

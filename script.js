@@ -10,6 +10,13 @@ function logMsg(msg, isError=false) {
 
 const distinctColors = ['#0055FF', '#D32F2F', '#00C853', '#F57C00', '#7B1FA2', '#00ACC1', '#C2185B', '#AFB42B', '#5D4037', '#616161', '#455A64', '#E64A19', '#512DA8', '#1976D2', '#388E3C', '#FBC02D', '#8E24AA', '#0288D1', '#689F38', '#E91E63'];
 
+const EXCLUDED_ANALYSTS = [
+    'Caíque Ferreira Batista', 
+    'JEFERSON PITINGA NOGUEIRA', 
+    'Automation for Jira', 
+    'Vinicius Augusto Macedo Silva'
+];
+
 const sideLabelsPlugin = {
     id: 'sideLabels',
     afterDatasetsDraw(chart, args, options) {
@@ -221,23 +228,41 @@ function recalculateKPIs(data) {
             if(d>0){ s.durSum+=d; s.durCount++; } 
         }
     });
-    document.getElementById('kpiTotal').innerText = data.length; document.getElementById('kpiSLA').innerText = s.slaTot?((s.slaOk/s.slaTot)*100).toFixed(1)+"%":"-"; document.getElementById('kpiSMA').innerText = s.durCount?formatDuration(s.durSum/s.durCount):"-";
+    
+    document.getElementById('kpiTotal').innerText = data.length; 
+    
+    const slaVal = s.slaTot ? ((s.slaOk/s.slaTot)*100) : 0;
+    const elKpiSla = document.getElementById('kpiSLA');
+    elKpiSla.innerText = s.slaTot ? slaVal.toFixed(1)+"%" : "-";
+    elKpiSla.className = 'kpi-value ' + (slaVal >= 70 ? 'text-warning' : 'text-danger');
+    if(slaVal >= 90) elKpiSla.className = 'kpi-value text-success';
+
+    document.getElementById('kpiSMA').innerText = s.durCount?formatDuration(s.durSum/s.durCount):"-";
     const topL = Object.entries(s.loc).sort((a,b)=>b[1]-a[1])[0]; document.getElementById('kpiLocation').innerText = topL?topL[0]:"-";
     
     const updateC = (k,l,d,p={}) => { charts[k].data.labels=l; charts[k].data.datasets=[{data:d,backgroundColor:p.bg||'#8680b1',borderColor:p.bd||'#8680b1',fill:p.fill||false}]; if(p.multi)charts[k].data.datasets[0].backgroundColor=p.bg; charts[k].update(); };
     const tK = Object.keys(s.trend).sort((a,b)=>{const[m1,y1]=a.split('/');const[m2,y2]=b.split('/');return y1==y2?m1-m2:y1-y2;}); updateC('trend',tK,tK.map(k=>s.trend[k]),{bg:'rgba(134,128,177,0.2)',fill:true});
-    const sL = Object.entries(s.loc).sort((a,b)=>b[1]-a[1]); updateC('loc',sL.map(x=>x[0]),sL.map(x=>x[1]),{bg:'#0055FF'});
-    const sA = Object.entries(s.ass).sort((a,b)=>b[1]-a[1]).slice(0,10); updateC('ass',sA.map(x=>x[0]),sA.map(x=>x[1]));
+    
+    // FILTROS VISUAIS (Demandas por Unidade e Top Analistas)
+    const sL = Object.entries(s.loc).filter(x => x[0] !== 'N/A').sort((a,b)=>b[1]-a[1]); 
+    updateC('loc',sL.map(x=>x[0]),sL.map(x=>x[1]),{bg:'#0055FF'});
+    
+    // Filtro de Analistas: Exclui N/A, Desligados e com < 3 chamados
+    const sA = Object.entries(s.ass)
+        .filter(x => x[0] !== 'N/A' && !EXCLUDED_ANALYSTS.includes(x[0]) && x[1] >= 3)
+        .sort((a,b)=>b[1]-a[1]).slice(0,10); 
+    updateC('ass',sA.map(x=>x[0]),sA.map(x=>x[1]));
+    
     updateC('type',Object.keys(s.type),Object.values(s.type),{multi:true,bg:distinctColors}); updateC('sla',['No Prazo','Fora'],[s.slaOk,s.slaTot-s.slaOk],{multi:true,bg:['#00C853','#FF5252']}); updateC('status',Object.keys(s.status),Object.values(s.status),{multi:true,bg:['#00C853','#455A64','#9E9E9E','#8680b1','#546E7A']});
     
     monthlyData={}; data.forEach(t=>{ const y=t.created.getFullYear().toString(); const m=(t.created.getMonth()+1).toString(); if(!monthlyData[y])monthlyData[y]={}; if(!monthlyData[y][m])monthlyData[y][m]=[]; monthlyData[y][m].push(t); });
     
-    calculateTeamInsights(data); // CHAMA A FUNÇÃO DE INSIGHTS DE EQUIPE
+    calculateTeamInsights(data);
     initMonthlyTab();
     updateChartTheme();
 }
 
-// --- FUNÇÃO PARA GERAR CARDS DE INSIGHT DA EQUIPE (HISTÓRICO) ---
+// --- INSIGHTS DE EQUIPE ---
 function calculateTeamInsights(data) {
     const grid = document.getElementById('team-insights-grid');
     grid.innerHTML = "";
@@ -252,10 +277,9 @@ function calculateTeamInsights(data) {
     data.forEach(t => {
         const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(t.status.toLowerCase());
         const isCanc = t.status.toLowerCase().includes('cancelado');
-        if(!isRes || isCanc || !t.assignee || t.assignee === 'N/A') return;
+        if(!isRes || isCanc || !t.assignee || t.assignee === 'N/A' || EXCLUDED_ANALYSTS.includes(t.assignee)) return;
 
         if(!analystStats[t.assignee]) analystStats[t.assignee] = { count: 0, slaOk: 0, slaTot: 0, durSum: 0, durCount: 0 };
-        
         analystStats[t.assignee].count++;
         teamTotalTickets++;
 
@@ -267,7 +291,6 @@ function calculateTeamInsights(data) {
                 teamTotalSlaOk++;
             }
         }
-
         const d = calculateBusinessTime(t.created, t.updated);
         if(d > 0) {
             analystStats[t.assignee].durSum += d;
@@ -277,7 +300,6 @@ function calculateTeamInsights(data) {
         }
     });
 
-    // Médias da Equipe
     const avgVol = Object.keys(analystStats).length ? teamTotalTickets / Object.keys(analystStats).length : 0;
     const avgSla = teamTotalSlaCount ? (teamTotalSlaOk / teamTotalSlaCount) * 100 : 0;
     const avgTma = teamTotalDurCount ? teamTotalDur / teamTotalDurCount : 0;
@@ -285,58 +307,25 @@ function calculateTeamInsights(data) {
     Object.entries(analystStats).sort((a,b) => b[1].count - a[1].count).forEach(([name, s]) => {
         const sla = s.slaTot ? (s.slaOk / s.slaTot) * 100 : 0;
         const tma = s.durCount ? s.durSum / s.durCount : 0;
+        let strength = ""; let weakness = ""; let action = "";
 
-        let strength = "";
-        let weakness = "";
-        let action = "";
+        if (sla > 90 && s.count > avgVol * 0.8) strength = "Alta confiabilidade e precisão técnica.";
+        else if (s.count > avgVol * 1.2) strength = "Alta capacidade de vazão (Volume).";
+        else if (tma < avgTma * 0.8) strength = "Agilidade na resolução de incidentes.";
+        else strength = "Consistência operacional.";
 
-        // Regras de Negócio para Insights (Perfil Geral)
-        if (sla > 90 && s.count > avgVol * 0.8) {
-            strength = "Alta confiabilidade e precisão técnica.";
-        } else if (s.count > avgVol * 1.2) {
-            strength = "Alta capacidade de vazão (Volume).";
-        } else if (tma < avgTma * 0.8) {
-            strength = "Agilidade na resolução de incidentes.";
-        } else {
-            strength = "Consistência operacional.";
-        }
-
-        if (sla < 75) {
-            weakness = "Cumprimento de SLA (Prazos).";
-            action = "Revisar fila de pendências e priorizar vencimentos.";
-        } else if (tma > avgTma * 1.3) {
-            weakness = "Tempo de atendimento elevado.";
-            action = "Avaliar necessidade de treinamento ou escalonamento.";
-        } else if (s.count < avgVol * 0.5) {
-            weakness = "Baixo volume de entregas.";
-            action = "Assumir tickets de backlog ou tarefas preventivas.";
-        } else {
-            weakness = "Nenhum ponto crítico detectado.";
-            action = "Manter monitoramento de qualidade.";
-        }
+        if (sla < 75) { weakness = "Cumprimento de SLA (Prazos)."; action = "Revisar fila de pendências e priorizar vencimentos."; }
+        else if (tma > avgTma * 1.3) { weakness = "Tempo de atendimento elevado."; action = "Avaliar necessidade de treinamento ou escalonamento."; }
+        else if (s.count < avgVol * 0.5) { weakness = "Baixo volume de entregas."; action = "Assumir tickets de backlog ou tarefas preventivas."; }
+        else { weakness = "Nenhum ponto crítico detectado."; action = "Manter monitoramento de qualidade."; }
 
         const cardHTML = `
             <div class="insight-card">
-                <div class="ic-header">
-                    <span class="ic-name">${name}</span>
-                </div>
-                <div class="ic-metrics">
-                    <span>Vol: ${s.count}</span>
-                    <span>SLA: ${sla.toFixed(0)}%</span>
-                    <span>TMA: ${formatDuration(tma)}</span>
-                </div>
-                <div class="ic-section">
-                    <span class="ic-label ic-strong">Ponto Forte</span>
-                    ${strength}
-                </div>
-                <div class="ic-section">
-                    <span class="ic-label ic-weak">Ponto de Atenção</span>
-                    ${weakness}
-                </div>
-                <div class="ic-section">
-                    <span class="ic-label ic-action">Plano de Ação</span>
-                    ${action}
-                </div>
+                <div class="ic-header"><span class="ic-name">${name}</span></div>
+                <div class="ic-metrics"><span>Vol: ${s.count}</span><span>SLA: ${sla.toFixed(0)}%</span><span>TMA: ${formatDuration(tma)}</span></div>
+                <div class="ic-section"><span class="ic-label ic-strong">Ponto Forte</span>${strength}</div>
+                <div class="ic-section"><span class="ic-label ic-weak">Ponto de Atenção</span>${weakness}</div>
+                <div class="ic-section"><span class="ic-label ic-action">Plano de Ação</span>${action}</div>
             </div>
         `;
         grid.innerHTML += cardHTML;
@@ -350,38 +339,20 @@ function updateMonthSelect() { monthSelect.innerHTML=""; const y=yearSelect.valu
 function generateInsights(count, slaPerc, tmaMs, avgCount, avgSla, avgTma) {
     let reason = "Dentro do esperado.";
     let action = "Manter padrão de atendimento.";
-
     const isSlaBad = slaPerc < 75; const isSlaGreat = slaPerc > 90;
     const isVolHigh = count > (avgCount * 1.3); const isVolLow = count < (avgCount * 0.5); 
     const isSlow = tmaMs > (avgTma * 1.2); 
 
     if (isSlaBad) {
-        if (isVolHigh) { 
-            reason = "Sobrecarga de chamados (Fila Cheia)."; 
-            action = "Priorizar acesso remoto p/ agilizar ou pedir apoio."; 
-        } else if (isSlow) { 
-            reason = "Resoluções demoradas (Hardware/Rede?)."; 
-            action = "Verificar se há espera de peças ou escalonamento N3."; 
-        } else { 
-            reason = "SLA crítico: Tickets vencendo."; 
-            action = "Focar nos chamados VIP/Críticos imediatos."; 
-        }
+        if (isVolHigh) { reason = "Sobrecarga de chamados (Fila Cheia)."; action = "Priorizar acesso remoto p/ agilizar ou pedir apoio."; }
+        else if (isSlow) { reason = "Resoluções demoradas (Hardware/Rede?)."; action = "Verificar se há espera de peças ou escalonamento N3."; }
+        else { reason = "SLA crítico: Tickets vencendo."; action = "Focar nos chamados VIP/Críticos imediatos."; }
     } else if (isSlaGreat) {
-        if (isVolHigh) { 
-            reason = "Alta eficiência técnica e operacional."; 
-            action = "Compartilhar dicas de troubleshooting com o time."; 
-        } else { 
-            reason = "Entregas consistentes e no prazo."; 
-            action = "Manter rotina de verificações preventivas."; 
-        }
+        if (isVolHigh) { reason = "Alta eficiência técnica e operacional."; action = "Compartilhar dicas de troubleshooting com o time."; }
+        else { reason = "Entregas consistentes e no prazo."; action = "Manter rotina de verificações preventivas."; }
     } else {
-        if (isSlow) { 
-            reason = "No prazo, mas tempo técnico alto."; 
-            action = "Otimizar scripts de correção ou ferramentas de acesso."; 
-        } else if (isVolLow) { 
-            reason = "Baixa demanda de incidentes."; 
-            action = "Apoiar em inventário ou configurações de bancada."; 
-        }
+        if (isSlow) { reason = "No prazo, mas tempo técnico alto."; action = "Otimizar scripts de correção ou ferramentas de acesso."; }
+        else if (isVolLow) { reason = "Baixa demanda de incidentes."; action = "Apoiar em inventário ou configurações de bancada."; }
     }
     return { reason, action };
 }
@@ -462,12 +433,17 @@ function updateMonthlyView() {
     charts.mType.data.datasets = [{ data: Object.values(sType), backgroundColor: distinctColors }];
     charts.mType.update();
 
-    const uS = Object.entries(s.unit).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const uS = Object.entries(s.unit)
+        .filter(x => x[0] !== 'N/A') // Filtro N/A também no gráfico mensal
+        .sort((a, b) => b[1] - a[1]).slice(0, 5);
     charts.mUnits.data.labels = uS.map(x => x[0]);
     charts.mUnits.data.datasets = [{ data: uS.map(x => x[1]), backgroundColor: '#0055FF' }];
     charts.mUnits.update();
 
-    const topA = Object.entries(s.ass).filter(([k, v]) => k !== 'N/A').sort((a, b) => b[1] - a[1]).map(x => x[0]);
+    const topA = Object.entries(s.ass)
+        .filter(([k, v]) => k !== 'N/A') // Filtra N/A
+        .sort((a, b) => b[1] - a[1]).map(x => x[0]);
+    
     let allU = new Set();
     topA.forEach(a => Object.keys(s.matrix[a] || {}).forEach(u => allU.add(u)));
     const unitDS = Array.from(allU).map((u, i) => ({
@@ -513,7 +489,6 @@ function updateMonthlyView() {
     renderTable('tableUnit', det.unit, 'unit');
 }
 
-// --- CLIQUE NA TABELA (SLA E TMA) COM CONTEXTO TI ---
 function handleMetricClick(entityName, metricType, entityType) {
     const y = yearSelect.value;
     const m = monthSelect.value;
@@ -522,44 +497,26 @@ function handleMetricClick(entityName, metricType, entityType) {
         const statusLower = t.status.toLowerCase();
         const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(statusLower);
         const isCanc = statusLower.includes('cancelado');
-        // Filtra cancelados também aqui para não aparecerem na lista
         return isRes && !isCanc && t.updated && t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
     });
 
-    if (entityType === 'assignee') {
-        tickets = tickets.filter(t => t.assignee === entityName);
-    } else {
-        tickets = tickets.filter(t => t.location === entityName);
-    }
+    if (entityType === 'assignee') tickets = tickets.filter(t => t.assignee === entityName);
+    else tickets = tickets.filter(t => t.location === entityName);
 
     let title = "";
     
     if (metricType === 'sla') {
         title = `Chamados fora do Prazo - ${entityName}`;
-        tickets = tickets.filter(t => {
-            if(!t.deadline) return false;
-            return t.updated > t.deadline; 
-        }).map(t => {
-            if(entityType === 'assignee') t.correction = "SLA estourado. Validar se houve espera de usuário ou indisponibilidade local.";
-            else t.correction = "Atraso na localidade. Verificar rota de atendimento ou disponibilidade técnica na planta.";
-            return t;
-        });
+        tickets = tickets.filter(t => { if(!t.deadline) return false; return t.updated > t.deadline; })
+            .map(t => { t.correction = entityType === 'assignee' ? "SLA estourado. Validar se houve espera de usuário." : "Atraso na localidade. Verificar rota ou acesso."; return t; });
     } 
     else if (metricType === 'tma') {
         title = `Chamados com TMA Alto - ${entityName}`;
         const totalDur = tickets.reduce((acc, t) => acc + calculateBusinessTime(t.created, t.updated), 0);
         const avgDur = tickets.length ? totalDur / tickets.length : 0;
-        
-        tickets = tickets.filter(t => {
-            const d = calculateBusinessTime(t.created, t.updated);
-            return d > avgDur; 
-        }).map(t => {
-            if(entityType === 'assignee') t.correction = "Tempo técnico alto. Checar se foi formatação, troca de peça ou lentidão de rede.";
-            else t.correction = "Lentidão na unidade. Possível parque tecnológico obsoleto ou falha massiva.";
-            return t;
-        });
+        tickets = tickets.filter(t => { const d = calculateBusinessTime(t.created, t.updated); return d > avgDur; })
+            .map(t => { t.correction = entityType === 'assignee' ? "Tempo técnico alto. Checar complexidade." : "Lentidão na unidade. Checar infraestrutura."; return t; });
     }
-
     openDrillDown(tickets, title, true);
 }
 
@@ -567,14 +524,10 @@ function openDrillDown(tickets, title = "Detalhes", showCorrection = false) {
     const tableHeader = document.querySelector('#ddTable thead tr');
     const tbody = document.querySelector('#ddTable tbody');
     tbody.innerHTML = "";
-    
     if(title) document.getElementById('ddTitle').innerText = title;
 
-    if (showCorrection) {
-        tableHeader.innerHTML = `<th>ID</th><th>Resumo</th><th>Status</th><th>Data Res.</th><th>Correção Sugerida</th>`;
-    } else {
-        tableHeader.innerHTML = `<th>ID</th><th>Resumo</th><th>Status</th><th>Responsável</th><th>Data</th>`;
-    }
+    if (showCorrection) tableHeader.innerHTML = `<th>ID</th><th>Resumo</th><th>Status</th><th>Data Res.</th><th>Correção Sugerida</th>`;
+    else tableHeader.innerHTML = `<th>ID</th><th>Resumo</th><th>Status</th><th>Responsável</th><th>Data</th>`;
     
     if(tickets.length === 0) {
         tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; padding:20px;'>Nenhum impacto negativo encontrado neste critério.</td></tr>";
@@ -586,23 +539,15 @@ function openDrillDown(tickets, title = "Detalhes", showCorrection = false) {
                 <td>${t.summary || '-'}</td>
                 <td><span class="sla-badge" style="background:#eee; color:#333;">${t.status}</span></td>
             `;
-            
-            if (showCorrection) {
-                rowContent += `<td>${dt}</td><td style="color:var(--danger); font-weight:600;">${t.correction || '-'}</td>`;
-            } else {
-                const dtCria = t.created ? t.created.toLocaleDateString('pt-BR') : '-';
-                rowContent += `<td>${t.assignee}</td><td>${dtCria}</td>`;
-            }
+            if (showCorrection) rowContent += `<td>${dt}</td><td style="color:var(--danger); font-weight:600;">${t.correction || '-'}</td>`;
+            else { const dtCria = t.created ? t.created.toLocaleDateString('pt-BR') : '-'; rowContent += `<td>${t.assignee}</td><td>${dtCria}</td>`; }
             tbody.innerHTML += `<tr>${rowContent}</tr>`;
         });
     }
     document.getElementById('drillDownModal').classList.add('open');
 }
 
-function toggleTheme() { 
-    document.body.classList.toggle('light-mode'); 
-    updateChartTheme();
-}
+function toggleTheme() { document.body.classList.toggle('light-mode'); updateChartTheme(); }
 
 function updateChartTheme() {
     const isL = document.body.classList.contains('light-mode'); 
@@ -611,25 +556,16 @@ function updateChartTheme() {
     const g = isL ? '#E0E0E0' : '#2C2C2C'; 
     Chart.defaults.color = c; 
     Chart.defaults.borderColor = g; 
-    if(Chart.defaults.plugins.datalabels) {
-        Chart.defaults.plugins.datalabels.color = c; 
-    }
+    if(Chart.defaults.plugins.datalabels) Chart.defaults.plugins.datalabels.color = c; 
     Object.values(charts).forEach(ch => { 
-        if(ch.config.type === 'pie' || ch.config.type === 'doughnut') {
-             if(ch.options.plugins.legend && ch.options.plugins.legend.labels) {
-                 ch.options.plugins.legend.labels.color = c;
-             }
-        }
+        if(ch.config.type === 'pie' || ch.config.type === 'doughnut') { if(ch.options.plugins.legend && ch.options.plugins.legend.labels) ch.options.plugins.legend.labels.color = c; }
         if(ch!==charts.mAss) ch.update(); 
     }); 
     if(charts.mAss) { 
         charts.mAss.options.plugins.legend.labels.color = c;
         if(charts.mAss.options.scales.x) charts.mAss.options.scales.x.grid.color = g;
         if(charts.mAss.options.scales.y) charts.mAss.options.scales.y.grid.color = g;
-        if(charts.mAss.data.datasets.length > 0) { 
-            const lastDS = charts.mAss.data.datasets[charts.mAss.data.datasets.length-1]; 
-            if(lastDS.label === 'Total') lastDS.datalabels.color = c; 
-        }
+        if(charts.mAss.data.datasets.length > 0) { const lastDS = charts.mAss.data.datasets[charts.mAss.data.datasets.length-1]; if(lastDS.label === 'Total') lastDS.datalabels.color = c; }
         charts.mAss.update(); 
     } 
 }
@@ -657,16 +593,8 @@ function renderFs() {
         const isL = document.body.classList.contains('light-mode');
         const fsColor = isL ? '#000000' : '#FFFFFF';
         const cfg = { 
-            type: ref.c.config.type, 
-            data: JSON.parse(JSON.stringify(ref.c.config.data)), 
-            options: { 
-                ...ref.c.config.options, maintainAspectRatio: false, 
-                plugins: { 
-                    ...ref.c.config.options.plugins, 
-                    legend: { display: showLegend, position:'bottom', labels:{color:fsColor, filter: (i)=>i.text!=='Total'} } 
-                }, 
-                layout: { padding: fsPadding } 
-            } 
+            type: ref.c.config.type, data: JSON.parse(JSON.stringify(ref.c.config.data)), 
+            options: { ...ref.c.config.options, maintainAspectRatio: false, plugins: { ...ref.c.config.options.plugins, legend: { display: showLegend, position:'bottom', labels:{color:fsColor, filter: (i)=>i.text!=='Total'} } }, layout: { padding: fsPadding } } 
         };
         if(fsIdx === 5) cfg.options.plugins.sideLabels = sideLabelsPlugin;
         fsChart = new Chart(ctx, cfg);
