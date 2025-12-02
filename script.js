@@ -166,7 +166,6 @@ function processCSV(text, isAuto=false) {
     logMsg(`Sucesso! ${data.length} registros carregados.`);
 }
 
-// --- CÁLCULO DE HORAS ÚTEIS (SEG-SEX 08:00 - 18:00) ---
 function calculateBusinessTime(start, end) {
     if (start >= end) return 0;
     const startHour = 8; const endHour = 18;
@@ -207,9 +206,17 @@ function recalculateKPIs(data) {
     data.forEach(t => {
         const k = `${String(t.created.getMonth()+1).padStart(2,'0')}/${t.created.getFullYear().toString().substr(2)}`;
         s.trend[k]=(s.trend[k]||0)+1; s.loc[t.location]=(s.loc[t.location]||0)+1; s.ass[t.assignee]=(s.ass[t.assignee]||0)+1; s.type[t.type]=(s.type[t.type]||0)+1; s.status[t.status]=(s.status[t.status]||0)+1;
-        const isRes = ['resolvido','fechada','concluído'].includes(t.status.toLowerCase());
-        if(t.deadline) { s.slaTot++; if((isRes&&t.updated<=t.deadline)||(!isRes&&new Date()<=t.deadline)) s.slaOk++; }
-        if(isRes && t.updated) { 
+        
+        const statusLower = t.status.toLowerCase();
+        const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(statusLower);
+        const isCanc = statusLower.includes('cancelado');
+
+        if(t.deadline && !isCanc) { 
+            s.slaTot++; 
+            if((isRes&&t.updated<=t.deadline)||(!isRes&&new Date()<=t.deadline)) s.slaOk++; 
+        }
+        
+        if(isRes && t.updated && !isCanc) { 
             const d = calculateBusinessTime(t.created, t.updated); 
             if(d>0){ s.durSum+=d; s.durCount++; } 
         }
@@ -224,8 +231,116 @@ function recalculateKPIs(data) {
     updateC('type',Object.keys(s.type),Object.values(s.type),{multi:true,bg:distinctColors}); updateC('sla',['No Prazo','Fora'],[s.slaOk,s.slaTot-s.slaOk],{multi:true,bg:['#00C853','#FF5252']}); updateC('status',Object.keys(s.status),Object.values(s.status),{multi:true,bg:['#00C853','#455A64','#9E9E9E','#8680b1','#546E7A']});
     
     monthlyData={}; data.forEach(t=>{ const y=t.created.getFullYear().toString(); const m=(t.created.getMonth()+1).toString(); if(!monthlyData[y])monthlyData[y]={}; if(!monthlyData[y][m])monthlyData[y][m]=[]; monthlyData[y][m].push(t); });
+    
+    calculateTeamInsights(data); // CHAMA A FUNÇÃO DE INSIGHTS DE EQUIPE
     initMonthlyTab();
     updateChartTheme();
+}
+
+// --- FUNÇÃO PARA GERAR CARDS DE INSIGHT DA EQUIPE (HISTÓRICO) ---
+function calculateTeamInsights(data) {
+    const grid = document.getElementById('team-insights-grid');
+    grid.innerHTML = "";
+
+    const analystStats = {};
+    let teamTotalTickets = 0;
+    let teamTotalSlaOk = 0;
+    let teamTotalSlaCount = 0;
+    let teamTotalDur = 0;
+    let teamTotalDurCount = 0;
+
+    data.forEach(t => {
+        const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(t.status.toLowerCase());
+        const isCanc = t.status.toLowerCase().includes('cancelado');
+        if(!isRes || isCanc || !t.assignee || t.assignee === 'N/A') return;
+
+        if(!analystStats[t.assignee]) analystStats[t.assignee] = { count: 0, slaOk: 0, slaTot: 0, durSum: 0, durCount: 0 };
+        
+        analystStats[t.assignee].count++;
+        teamTotalTickets++;
+
+        if(t.deadline) {
+            analystStats[t.assignee].slaTot++;
+            teamTotalSlaCount++;
+            if(t.updated <= t.deadline) {
+                analystStats[t.assignee].slaOk++;
+                teamTotalSlaOk++;
+            }
+        }
+
+        const d = calculateBusinessTime(t.created, t.updated);
+        if(d > 0) {
+            analystStats[t.assignee].durSum += d;
+            analystStats[t.assignee].durCount++;
+            teamTotalDur += d;
+            teamTotalDurCount++;
+        }
+    });
+
+    // Médias da Equipe
+    const avgVol = Object.keys(analystStats).length ? teamTotalTickets / Object.keys(analystStats).length : 0;
+    const avgSla = teamTotalSlaCount ? (teamTotalSlaOk / teamTotalSlaCount) * 100 : 0;
+    const avgTma = teamTotalDurCount ? teamTotalDur / teamTotalDurCount : 0;
+
+    Object.entries(analystStats).sort((a,b) => b[1].count - a[1].count).forEach(([name, s]) => {
+        const sla = s.slaTot ? (s.slaOk / s.slaTot) * 100 : 0;
+        const tma = s.durCount ? s.durSum / s.durCount : 0;
+
+        let strength = "";
+        let weakness = "";
+        let action = "";
+
+        // Regras de Negócio para Insights (Perfil Geral)
+        if (sla > 90 && s.count > avgVol * 0.8) {
+            strength = "Alta confiabilidade e precisão técnica.";
+        } else if (s.count > avgVol * 1.2) {
+            strength = "Alta capacidade de vazão (Volume).";
+        } else if (tma < avgTma * 0.8) {
+            strength = "Agilidade na resolução de incidentes.";
+        } else {
+            strength = "Consistência operacional.";
+        }
+
+        if (sla < 75) {
+            weakness = "Cumprimento de SLA (Prazos).";
+            action = "Revisar fila de pendências e priorizar vencimentos.";
+        } else if (tma > avgTma * 1.3) {
+            weakness = "Tempo de atendimento elevado.";
+            action = "Avaliar necessidade de treinamento ou escalonamento.";
+        } else if (s.count < avgVol * 0.5) {
+            weakness = "Baixo volume de entregas.";
+            action = "Assumir tickets de backlog ou tarefas preventivas.";
+        } else {
+            weakness = "Nenhum ponto crítico detectado.";
+            action = "Manter monitoramento de qualidade.";
+        }
+
+        const cardHTML = `
+            <div class="insight-card">
+                <div class="ic-header">
+                    <span class="ic-name">${name}</span>
+                </div>
+                <div class="ic-metrics">
+                    <span>Vol: ${s.count}</span>
+                    <span>SLA: ${sla.toFixed(0)}%</span>
+                    <span>TMA: ${formatDuration(tma)}</span>
+                </div>
+                <div class="ic-section">
+                    <span class="ic-label ic-strong">Ponto Forte</span>
+                    ${strength}
+                </div>
+                <div class="ic-section">
+                    <span class="ic-label ic-weak">Ponto de Atenção</span>
+                    ${weakness}
+                </div>
+                <div class="ic-section">
+                    <span class="ic-label ic-action">Plano de Ação</span>
+                    ${action}
+                </div>
+            </div>
+        `;
+        grid.innerHTML += cardHTML;
+    });
 }
 
 const yearSelect = document.getElementById('yearSelect'), monthSelect = document.getElementById('monthSelect'), mNames = {"1":"Janeiro","2":"Fevereiro","3":"Março","4":"Abril","5":"Maio","6":"Junho","7":"Julho","8":"Agosto","9":"Setembro","10":"Outubro","11":"Novembro","12":"Dezembro"};
@@ -234,21 +349,39 @@ function updateMonthSelect() { monthSelect.innerHTML=""; const y=yearSelect.valu
 
 function generateInsights(count, slaPerc, tmaMs, avgCount, avgSla, avgTma) {
     let reason = "Dentro do esperado.";
-    let action = "Manter padrão.";
+    let action = "Manter padrão de atendimento.";
+
     const isSlaBad = slaPerc < 75; const isSlaGreat = slaPerc > 90;
     const isVolHigh = count > (avgCount * 1.3); const isVolLow = count < (avgCount * 0.5); 
     const isSlow = tmaMs > (avgTma * 1.2); 
 
     if (isSlaBad) {
-        if (isVolHigh) { reason = "Sobrecarga de chamados impactando prazos."; action = "Redistribuir tickets ou pausar novas atribuições."; }
-        else if (isSlow) { reason = "Atendimentos demorados (TMA alto)."; action = "Verificar complexidade ou treinar em resolução."; }
-        else { reason = "Baixo cumprimento de prazos pontual."; action = "Revisar priorização de fila."; }
+        if (isVolHigh) { 
+            reason = "Sobrecarga de chamados (Fila Cheia)."; 
+            action = "Priorizar acesso remoto p/ agilizar ou pedir apoio."; 
+        } else if (isSlow) { 
+            reason = "Resoluções demoradas (Hardware/Rede?)."; 
+            action = "Verificar se há espera de peças ou escalonamento N3."; 
+        } else { 
+            reason = "SLA crítico: Tickets vencendo."; 
+            action = "Focar nos chamados VIP/Críticos imediatos."; 
+        }
     } else if (isSlaGreat) {
-        if (isVolHigh) { reason = "Alta performance com volume elevado."; action = "Reconhecimento ou mentorar equipe."; }
-        else { reason = "Prazos cumpridos com excelência."; action = "Avaliar aumento gradativo de carga."; }
+        if (isVolHigh) { 
+            reason = "Alta eficiência técnica e operacional."; 
+            action = "Compartilhar dicas de troubleshooting com o time."; 
+        } else { 
+            reason = "Entregas consistentes e no prazo."; 
+            action = "Manter rotina de verificações preventivas."; 
+        }
     } else {
-        if (isSlow) { reason = "Prazos ok, mas resolução lenta."; action = "Focar em agilidade técnica."; }
-        else if (isVolLow) { reason = "Volume abaixo da média da equipe."; action = "Assumir tarefas de apoio ou backlog."; }
+        if (isSlow) { 
+            reason = "No prazo, mas tempo técnico alto."; 
+            action = "Otimizar scripts de correção ou ferramentas de acesso."; 
+        } else if (isVolLow) { 
+            reason = "Baixa demanda de incidentes."; 
+            action = "Apoiar em inventário ou configurações de bancada."; 
+        }
     }
     return { reason, action };
 }
@@ -258,10 +391,14 @@ function updateMonthlyView() {
     const m = monthSelect.value;
     const createdInMonth = monthlyData[y] && monthlyData[y][m] ? monthlyData[y][m] : [];
     
+    // Filtro principal: Remove CANCELADOS das análises de performance
     const resolvedInMonth = allTickets.filter(t => {
         if (!t.updated) return false;
-        const isRes = ['resolvido', 'fechada', 'concluído', 'done', 'fechado'].includes(t.status.toLowerCase());
-        if (!isRes) return false;
+        const statusLower = t.status.toLowerCase();
+        const isRes = ['resolvido', 'fechada', 'concluído', 'done', 'fechado'].includes(statusLower);
+        const isCanc = statusLower.includes('cancelado');
+        if (!isRes || isCanc) return false;
+        
         return t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
     });
 
@@ -351,7 +488,6 @@ function updateMonthlyView() {
         tbody.innerHTML = "";
         const entries = Object.entries(dataObj).filter(([k,v]) => k !== 'N/A').sort((a, b) => b[1].count - a[1].count);
         
-        // Média Geral para Insights
         let totalC=0, totalSla=0, totalTma=0, count=0;
         entries.forEach(([_,v])=>{ totalC+=v.count; if(v.slaTot)totalSla+=(v.slaOk/v.slaTot); if(v.durCount)totalTma+=(v.durSum/v.durCount); count++; });
         const avgCount = count?totalC/count:0; const avgTma = count?totalTma/count:0;
@@ -362,8 +498,6 @@ function updateMonthlyView() {
             const c = p >= 70 ? 'sla-ok' : 'sla-nok';
             
             let rowHtml = `<tr><td><strong>${k}</strong></td><td>${v.count}</td>`;
-            
-            // Células interativas (SLA e TMA) para Analista (assignee) E Unidade (unit)
             rowHtml += `<td class="clickable-cell" onclick="handleMetricClick('${k}', 'sla', '${type}')"><span class="sla-badge ${c}">${p}%</span></td>`;
             rowHtml += `<td class="clickable-cell" onclick="handleMetricClick('${k}', 'tma', '${type}')">${formatDuration(tmaVal)}</td>`;
             
@@ -379,18 +513,19 @@ function updateMonthlyView() {
     renderTable('tableUnit', det.unit, 'unit');
 }
 
-// --- FUNÇÃO UNIFICADA DE CLICK NA TABELA (Analista e Unidade) ---
+// --- CLIQUE NA TABELA (SLA E TMA) COM CONTEXTO TI ---
 function handleMetricClick(entityName, metricType, entityType) {
     const y = yearSelect.value;
     const m = monthSelect.value;
     
-    // Filtra chamados do mês
     let tickets = allTickets.filter(t => {
-        const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(t.status.toLowerCase());
-        return isRes && t.updated && t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
+        const statusLower = t.status.toLowerCase();
+        const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(statusLower);
+        const isCanc = statusLower.includes('cancelado');
+        // Filtra cancelados também aqui para não aparecerem na lista
+        return isRes && !isCanc && t.updated && t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
     });
 
-    // Filtra pela entidade (Analista ou Unidade)
     if (entityType === 'assignee') {
         tickets = tickets.filter(t => t.assignee === entityName);
     } else {
@@ -399,30 +534,28 @@ function handleMetricClick(entityName, metricType, entityType) {
 
     let title = "";
     
-    // Lógica para filtrar apenas os "ruins" e gerar sugestão
     if (metricType === 'sla') {
         title = `Chamados fora do Prazo - ${entityName}`;
         tickets = tickets.filter(t => {
             if(!t.deadline) return false;
             return t.updated > t.deadline; 
         }).map(t => {
-            if(entityType === 'assignee') t.correction = "Monitorar prazos. Priorizar filas críticas.";
-            else t.correction = "Verificar rota logística, acesso à unidade ou backlog local.";
+            if(entityType === 'assignee') t.correction = "SLA estourado. Validar se houve espera de usuário ou indisponibilidade local.";
+            else t.correction = "Atraso na localidade. Verificar rota de atendimento ou disponibilidade técnica na planta.";
             return t;
         });
     } 
     else if (metricType === 'tma') {
         title = `Chamados com TMA Alto - ${entityName}`;
-        // Calcula a média deste grupo específico
         const totalDur = tickets.reduce((acc, t) => acc + calculateBusinessTime(t.created, t.updated), 0);
         const avgDur = tickets.length ? totalDur / tickets.length : 0;
         
         tickets = tickets.filter(t => {
             const d = calculateBusinessTime(t.created, t.updated);
-            return d > avgDur; // Mostra apenas os que estão acima da média DESTE grupo
+            return d > avgDur; 
         }).map(t => {
-            if(entityType === 'assignee') t.correction = "Duração acima da média. Avaliar complexidade ou bloqueios.";
-            else t.correction = "Demora no atendimento local. Checar infraestrutura ou burocracia de acesso.";
+            if(entityType === 'assignee') t.correction = "Tempo técnico alto. Checar se foi formatação, troca de peça ou lentidão de rede.";
+            else t.correction = "Lentidão na unidade. Possível parque tecnológico obsoleto ou falha massiva.";
             return t;
         });
     }

@@ -95,13 +95,21 @@
         </div>
         <div class="charts-grid single-col"><div class="chart-container"><div class="chart-header">Evolução de Chamados</div><div class="chart-wrapper-inner"><canvas id="trendChart"></canvas></div></div></div>
     </div>
+    
     <div id="tab-equipe" class="tab-content">
         <div class="charts-grid">
             <div class="chart-container full-width"><div class="chart-header">Demandas por Unidade</div><div class="chart-wrapper-inner"><canvas id="locationChart"></canvas></div></div>
-            <div class="chart-container"><div class="chart-header">Top Analistas</div><div class="chart-wrapper-inner"><canvas id="assigneeChart"></canvas></div></div>
+            <div class="chart-container"><div class="chart-header">Top Analistas (Volume)</div><div class="chart-wrapper-inner"><canvas id="assigneeChart"></canvas></div></div>
             <div class="chart-container"><div class="chart-header">Tipos de Solicitação</div><div class="chart-wrapper-inner"><canvas id="typeChart"></canvas></div></div>
         </div>
+        
+        <div class="perf-container" style="margin-top: 30px;">
+            <div class="perf-header">Raio-X da Equipe (Análise de Perfil)</div>
+            <div id="team-insights-grid" class="insight-grid">
+                </div>
+        </div>
     </div>
+
     <div id="tab-status" class="tab-content">
         <div class="charts-grid">
             <div class="chart-container"><div class="chart-header">Cumprimento de Prazos</div><div class="chart-wrapper-inner"><canvas id="slaChart"></canvas></div></div>
@@ -124,13 +132,12 @@
 </div>
 
 <div id="drillDownModal" class="fs-modal" style="z-index: 10005;">
-    <div class="fs-content" style="height: 85vh; width: 95%; max-width: 1000px; display: flex; flex-direction: column;">
+    <div class="fs-content" style="height: 80vh; width: 90%; max-width: 1000px;">
         <div class="fs-header">
             <span id="ddTitle">Lista de Chamados</span>
             <button class="fs-close-btn" onclick="closeDrillDown()">&times;</button>
         </div>
-        
-        <div class="fs-table-container active" style="display:block; flex:1; overflow-y: auto;">
+        <div class="fs-table-container active" style="display:block; flex:1;">
             <table class="perf-table" id="ddTable">
                 <thead>
                     <tr>
@@ -143,12 +150,6 @@
                 </thead>
                 <tbody></tbody>
             </table>
-        </div>
-
-        <div class="pagination-controls" style="padding-top: 15px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-            <button class="btn-action btn-theme" onclick="changeDrillDownPage(-1)">&#10094; Anterior</button>
-            <span id="pageInfo" style="font-weight: 600; color: var(--text-muted);">Página 1 de 1</span>
-            <button class="btn-action btn-theme" onclick="changeDrillDownPage(1)">Próximo &#10095;</button>
         </div>
     </div>
 </div>

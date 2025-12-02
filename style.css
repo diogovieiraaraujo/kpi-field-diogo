@@ -52,6 +52,75 @@ body { font-family: 'Montserrat', sans-serif; background-color: var(--bg-body); 
     font-weight: 800;
 }
 
+/* CARDS DE INSIGHT DA EQUIPE (NOVO) */
+.insight-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    padding: 10px 0;
+}
+
+.insight-card {
+    background-color: var(--bg-body);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.insight-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    border-color: var(--brand-accent);
+}
+
+.ic-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+    margin-bottom: 5px;
+}
+
+.ic-name {
+    font-weight: 800;
+    font-size: 1rem;
+    color: var(--text-main);
+}
+
+.ic-metrics {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    background: rgba(134,128,177,0.1);
+    padding: 6px;
+    border-radius: 4px;
+}
+
+.ic-section {
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.ic-label {
+    font-weight: 700;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+    display: block;
+}
+
+.ic-strong { color: var(--success); }
+.ic-weak { color: var(--danger); }
+.ic-action { color: var(--brand-blue); font-style: italic; }
+
+
 /* LOG */
 #statusLog { background: #d1e7dd; color: #0f5132; padding: 10px; border-radius: 6px; margin-bottom: 15px; font-size: 0.85rem; border: 1px solid #badbcc; display: none; text-align: center; }
 
@@ -129,6 +198,7 @@ table.perf-table td:nth-child(6)  /* Coluna Ação */ {
     .fs-content { width: 100%; height: 100%; border-radius: 0; padding: 10px; }
     .fs-logo { height: 25px; bottom: 10px; right: 10px; opacity: 0.6; }
     .fs-nav-btn { padding: 15px; font-size: 1.5rem; background: rgba(0,0,0,0.3); }
+    .insight-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
     .kpi-grid { grid-template-columns: 1fr; }
