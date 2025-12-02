@@ -57,6 +57,14 @@ function initCharts() {
         const defaultPadding = (type === 'pie' || type === 'doughnut') 
             ? { padding: 20 } 
             : { padding: { top: 30, right: 35, left: 10, bottom: 10 } }; 
+        
+        const onClickHandler = (evt, elements, chart) => {
+            if (elements.length > 0) {
+                const index = elements[0].index;
+                const datasetIndex = elements[0].datasetIndex;
+                handleChartClick(id, index, datasetIndex, chart);
+            }
+        };
 
         return new Chart(ctx, { 
             type: type, 
@@ -67,6 +75,7 @@ function initCharts() {
                 layout: defaultPadding, 
                 plugins: { legend: { display: false } }, 
                 scales: (type!=='pie'&&type!=='doughnut')?{x:{grid:{color:'#333'}},y:{grid:{color:'#333'}}}:{}, 
+                onClick: onClickHandler, 
                 ...cfg 
             } 
         });
@@ -87,21 +96,10 @@ function initCharts() {
     charts.mStatus = createChart('monthlyStatusChart', 'bar', {});
     charts.mType = createChart('monthlyTypeChart', 'pie', { plugins: { legend: outsideLabelsConfig } });
     
-    // CORREÇÃO AQUI: Removidas cores fixas (hardcoded) para permitir troca de tema
     charts.mAss = createChart('monthlyAssigneeChart', 'bar', { 
-        scales:{
-            x:{stacked:true}, // Cor do grid gerenciada pelo updateChartTheme
-            y:{stacked:true} 
-        }, 
+        scales:{ x:{stacked:true}, y:{stacked:true} }, 
         plugins:{
-            legend:{
-                display:true, 
-                position:'bottom', 
-                labels:{
-                    filter: (i)=>i.text!=='Total'
-                    // Cor removida daqui para ser gerenciada pelo updateChartTheme
-                }
-            }, 
+            legend:{ display:true, position:'bottom', labels:{ filter: (i)=>i.text!=='Total' } }, 
             sideLabels: sideLabelsPlugin
         }, 
         layout: { padding: { top: 30, right: 50, left: 10, bottom: 10 } } 
@@ -112,9 +110,12 @@ function initCharts() {
 
 function handleFileSelect(evt) { 
     const file = evt.target.files[0]; 
-    if(!file)return; 
+    if(!file) return; 
     if(file.lastModified) {
-        document.getElementById('currentDate').innerText = new Date(file.lastModified).toLocaleString('pt-BR');
+        const fileDate = new Date(file.lastModified);
+        document.getElementById('currentDate').innerText = fileDate.toLocaleString('pt-BR');
+    } else {
+        document.getElementById('currentDate').innerText = new Date().toLocaleString('pt-BR');
     }
     const r = new FileReader(); 
     r.onload=(e)=>processCSV(e.target.result); 
@@ -128,7 +129,19 @@ function processCSV(text, isAuto=false) {
     const lines = text.split('\n').filter(l => l.trim().length > 0);
     const sep = lines[0].includes(';') ? ';' : ',';
     const headers = lines[0].split(sep).map(h => h.replace(/"/g,'').trim().toLowerCase());
-    const map = { created: headers.findIndex(h=>h.includes('criado')||h.includes('created')), updated: headers.findIndex(h=>h.includes('atualizado')), deadline: headers.findIndex(h=>h.includes('limite')), status: headers.findIndex(h=>h.includes('status')), assignee: headers.findIndex(h=>h.includes('responsável')), type: headers.findIndex(h=>h.includes('tipo')), loc: headers.findIndex(h=>h.includes('campo')||h.includes('local')) };
+    
+    const map = { 
+        created: headers.findIndex(h=>h.includes('criado')||h.includes('created')), 
+        updated: headers.findIndex(h=>h.includes('atualizado')||h.includes('updated')), 
+        deadline: headers.findIndex(h=>h.includes('limite')||h.includes('due')), 
+        status: headers.findIndex(h=>h.includes('status')), 
+        assignee: headers.findIndex(h=>h.includes('responsável')||h.includes('assignee')), 
+        type: headers.findIndex(h=>h.includes('tipo')||h.includes('type')), 
+        loc: headers.findIndex(h=>h.includes('campo')||h.includes('local')),
+        id: headers.findIndex(h=>h.includes('chave')||h.includes('issue id')||h.includes('key')||h.includes('número')),
+        summary: headers.findIndex(h=>h.includes('resumo')||h.includes('summary')||h.includes('título'))
+    };
+
     if(map.created===-1||map.status===-1){logMsg("CSV Inválido (Colunas não encontradas)",true);return;}
     const data = [];
     let maxDate = 0;
@@ -138,6 +151,7 @@ function processCSV(text, isAuto=false) {
         if(row.length < headers.length) continue;
         const clean = (x) => x ? x.replace(/"/g,'').trim() : 'N/A';
         const parseDt = (s) => { if(!s)return null; let c=clean(s).split(' '); let dp=c[0],tp=c[1]||"00:00"; let d,m,y; if(dp.includes('/'))[d,m,y]=dp.split('/').map(Number); else if(dp.includes('-'))[y,m,d]=dp.split('-').map(Number); else return null; if(y<100)y+=2000; let [h,min]=tp.split(':').map(Number); if(c.includes('PM')&&h<12)h+=12; if(c.includes('AM')&&h===12)h=0; const dt=new Date(y,m-1,d,h,min); return isNaN(dt)?null:dt; };
+        
         const cDt = parseDt(row[map.created]);
         const uDt = parseDt(row[map.updated]);
         
@@ -146,7 +160,19 @@ function processCSV(text, isAuto=false) {
             if(uDt && uDt.getTime() > maxDate) maxDate = uDt.getTime();
         }
 
-        if(cDt) data.push({ created: cDt, updated: uDt, deadline: parseDt(row[map.deadline]), status: clean(row[map.status]), assignee: clean(row[map.assignee])||'N/A', type: clean(row[map.type]), location: map.loc>-1?clean(row[map.loc]):'Geral' });
+        if(cDt) {
+            data.push({ 
+                created: cDt, 
+                updated: uDt, 
+                deadline: parseDt(row[map.deadline]), 
+                status: clean(row[map.status]), 
+                assignee: clean(row[map.assignee])||'N/A', 
+                type: clean(row[map.type]), 
+                location: map.loc>-1?clean(row[map.loc]):'Geral',
+                id: map.id > -1 ? clean(row[map.id]) : `REQ-${i}`,
+                summary: map.summary > -1 ? clean(row[map.summary]) : 'Sem resumo'
+            });
+        }
     }
 
     if(isAuto && maxDate > 0) {
@@ -226,22 +252,19 @@ function generateInsights(count, slaPerc, tmaMs, avgCount, avgSla, avgTma) {
             action = "Assumir tarefas de apoio ou backlog.";
         }
     }
-
     return { reason, action };
 }
 
 function updateMonthlyView() {
     const y = yearSelect.value;
     const m = monthSelect.value;
-
     const createdInMonth = monthlyData[y] && monthlyData[y][m] ? monthlyData[y][m] : [];
     
     const resolvedInMonth = allTickets.filter(t => {
         if (!t.updated) return false;
         const isRes = ['resolvido', 'fechada', 'concluído', 'done', 'fechado'].includes(t.status.toLowerCase());
         if (!isRes) return false;
-        return t.updated.getFullYear().toString() === y && 
-               (t.updated.getMonth() + 1).toString() === m;
+        return t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
     });
 
     const s = { slaOk: 0, slaTot: 0, durSum: 0, durCount: 0, unit: {}, ass: {}, matrix: {} };
@@ -261,10 +284,7 @@ function updateMonthlyView() {
                 if (t.updated <= t.deadline) o[k].slaOk++;
             }
             const d = t.updated - t.created;
-            if (d > 0) {
-                o[k].durSum += d;
-                o[k].durCount++;
-            }
+            if (d > 0) { o[k].durSum += d; o[k].durCount++; }
         };
         addD(det.ass, t.assignee);
         addD(det.unit, t.location);
@@ -274,10 +294,7 @@ function updateMonthlyView() {
             if (t.updated <= t.deadline) s.slaOk++;
         }
         const dur = t.updated - t.created;
-        if (dur > 0) {
-            s.durSum += dur;
-            s.durCount++;
-        }
+        if (dur > 0) { s.durSum += dur; s.durCount++; }
     });
 
     const elTotal = document.getElementById('monthlyTotal');
@@ -286,12 +303,10 @@ function updateMonthlyView() {
     
     elTotal.innerText = resolvedInMonth.length;
     elTotal.className = 'kpi-value text-normal'; 
-
     const slaVal = s.slaTot ? (s.slaOk / s.slaTot) * 100 : 0;
     elSLA.innerText = s.slaTot ? slaVal.toFixed(1) + "%" : "-";
     elSLA.className = 'kpi-value ' + (slaVal >= 70 ? 'text-warning' : 'text-danger'); 
     if(slaVal >= 90) elSLA.className = 'kpi-value text-success'; 
-
     elSMA.innerText = s.durCount ? formatDuration(s.durSum / s.durCount) : "-";
     elSMA.className = 'kpi-value text-success'; 
 
@@ -342,9 +357,7 @@ function updateMonthlyView() {
     const renderTable = (id, dataObj, isAnalyst) => {
         const tbody = document.querySelector(`#${id} tbody`);
         tbody.innerHTML = "";
-        
         const entries = Object.entries(dataObj).filter(([k,v]) => k !== 'N/A').sort((a, b) => b[1].count - a[1].count);
-
         let totalC = 0, totalSla = 0, totalTma = 0, count = 0;
         entries.forEach(([_, v]) => {
             totalC += v.count;
@@ -354,24 +367,19 @@ function updateMonthlyView() {
         });
         const avgCount = count ? totalC / count : 0;
         const avgTma = count ? totalTma / count : 0;
-
         entries.forEach(([k, v]) => {
             const p = v.slaTot ? ((v.slaOk / v.slaTot) * 100).toFixed(1) : 0;
             const tmaVal = v.durCount ? (v.durSum / v.durCount) : 0;
             const c = p >= 70 ? 'sla-ok' : 'sla-nok';
-            
             let rowHtml = `<tr><td><strong>${k}</strong></td><td>${v.count}</td><td><span class="sla-badge ${c}">${p}%</span></td><td>${formatDuration(tmaVal)}</td>`;
-            
             if (isAnalyst) {
                 const insight = generateInsights(v.count, parseFloat(p), tmaVal, avgCount, 70, avgTma);
                 rowHtml += `<td>${insight.reason}</td><td>${insight.action}</td>`;
             }
-            
             rowHtml += `</tr>`;
             tbody.innerHTML += rowHtml;
         });
     };
-
     renderTable('tableAssignee', det.ass, true); 
     renderTable('tableUnit', det.unit, false);
 }
@@ -381,37 +389,28 @@ function toggleTheme() {
     updateChartTheme();
 }
 
-// FUNÇÃO ATUALIZADA PARA CORRIGIR CORES NO MODO CLARO
 function updateChartTheme() {
     const isL = document.body.classList.contains('light-mode'); 
     document.getElementById('themeIcon').innerText = isL?'🌙':'☀️'; 
     const c = isL ? '#000000' : '#FFFFFF'; 
     const g = isL ? '#E0E0E0' : '#2C2C2C'; 
-    
     Chart.defaults.color = c; 
     Chart.defaults.borderColor = g; 
-    
     if(Chart.defaults.plugins.datalabels) {
         Chart.defaults.plugins.datalabels.color = c; 
     }
-    
     Object.values(charts).forEach(ch => { 
         if(ch.config.type === 'pie' || ch.config.type === 'doughnut') {
              if(ch.options.plugins.legend && ch.options.plugins.legend.labels) {
                  ch.options.plugins.legend.labels.color = c;
              }
         }
-        // Aplica a todos os gráficos, exceto o mAss que tem tratamento especial abaixo
         if(ch!==charts.mAss) ch.update(); 
     }); 
-    
-    // Tratamento específico para o gráfico de Analistas (mAss)
     if(charts.mAss) { 
-        // Força a atualização das cores das legendas e grids
         charts.mAss.options.plugins.legend.labels.color = c;
         if(charts.mAss.options.scales.x) charts.mAss.options.scales.x.grid.color = g;
         if(charts.mAss.options.scales.y) charts.mAss.options.scales.y.grid.color = g;
-        
         if(charts.mAss.data.datasets.length > 0) { 
             const lastDS = charts.mAss.data.datasets[charts.mAss.data.datasets.length-1]; 
             if(lastDS.label === 'Total') lastDS.datalabels.color = c; 
@@ -465,5 +464,118 @@ function renderFs() {
     }
 }
 document.addEventListener('keydown', e => { if(document.getElementById('fsModal').classList.contains('open')) { if(e.key=='ArrowLeft')changeFullscreenChart(-1); if(e.key=='ArrowRight')changeFullscreenChart(1); if(e.key=='Escape')closeFullscreenMode(); } });
+
+// --- LÓGICA DO DRILL DOWN (CORRIGIDA) ---
+function handleChartClick(chartId, index, datasetIndex, chart) {
+    const clickedLabel = chart.data.labels[index];
+    const y = yearSelect.value;
+    const m = monthSelect.value;
+    
+    const isMonthlyTab = document.getElementById('tab-mensal').classList.contains('active');
+    
+    let filtered = allTickets;
+
+    // DEFINIÇÃO DO TIPO DE FILTRO: CRIAÇÃO OU RESOLUÇÃO
+    // Gráficos de Entregas (SLA, Analistas, Unidades, Performance) -> Filtra por RESOLVIDO no mês
+    // Gráficos de Volume, Status, Tipos -> Filtra por CRIADO no mês (ou status atual)
+    
+    const isDeliveryChart = [
+        'monthlySlaChart', 'slaChart',
+        'monthlyUnitsChart', 'locationChart',
+        'monthlyAssigneeChart', 'assigneeChart'
+    ].includes(chartId);
+
+    // Se estiver na aba mensal, aplica o filtro de data base
+    if (isMonthlyTab) {
+        if (isDeliveryChart) {
+            // Filtro por Data de Resolução (Updated)
+            filtered = allTickets.filter(t => {
+                const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(t.status.toLowerCase());
+                return isRes && t.updated && t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
+            });
+        } else {
+            // Filtro por Data de Criação (Created)
+            // Para 'monthlyChart' (volume), 'monthlyStatusChart', 'monthlyTypeChart'
+            filtered = allTickets.filter(t => t.created && t.created.getFullYear().toString() === y && (t.created.getMonth() + 1).toString() === m);
+        }
+    }
+
+    // APLICAÇÃO DOS FILTROS ESPECÍFICOS DE CADA GRÁFICO
+    if (chartId === 'monthlyStatusChart' || chartId === 'statusChart') {
+        filtered = filtered.filter(t => t.status === clickedLabel);
+        document.getElementById('ddTitle').innerText = `Chamados - Status: ${clickedLabel}`;
+    }
+    else if (chartId === 'monthlyTypeChart' || chartId === 'typeChart') {
+        filtered = filtered.filter(t => t.type === clickedLabel);
+        document.getElementById('ddTitle').innerText = `Chamados - Tipo: ${clickedLabel}`;
+    }
+    else if (chartId === 'monthlySlaChart' || chartId === 'slaChart') {
+        const isOk = clickedLabel === 'No Prazo';
+        filtered = filtered.filter(t => {
+            if(!t.deadline) return false;
+            const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(t.status.toLowerCase());
+            const ok = (isRes && t.updated <= t.deadline) || (!isRes && new Date() <= t.deadline);
+            return isOk ? ok : !ok;
+        });
+        document.getElementById('ddTitle').innerText = `Chamados - SLA: ${clickedLabel}`;
+    }
+    else if (chartId === 'monthlyUnitsChart' || chartId === 'locationChart') {
+        filtered = filtered.filter(t => t.location === clickedLabel);
+        document.getElementById('ddTitle').innerText = `Chamados - Unidade: ${clickedLabel}`;
+    }
+    else if (chartId === 'monthlyAssigneeChart' || chartId === 'assigneeChart') {
+        const datasetLabel = chart.data.datasets[datasetIndex].label;
+        filtered = filtered.filter(t => t.assignee === clickedLabel);
+        
+        if(datasetLabel !== 'Total') {
+            filtered = filtered.filter(t => t.location === datasetLabel);
+            document.getElementById('ddTitle').innerText = `Chamados - ${clickedLabel} em ${datasetLabel}`;
+        } else {
+            document.getElementById('ddTitle').innerText = `Chamados - ${clickedLabel} (Total)`;
+        }
+    }
+    else if (chartId === 'monthlyChart') {
+        // Volume Diário (Label = dia do mês)
+        filtered = filtered.filter(t => t.created.getDate().toString() === clickedLabel);
+        document.getElementById('ddTitle').innerText = `Chamados do dia ${clickedLabel}/${m}/${y}`;
+    }
+    else if (chartId === 'trendChart') {
+        // Tendência (Label = mm/yy)
+        const [tm, ty] = clickedLabel.split('/');
+        const fullY = "20" + ty;
+        filtered = allTickets.filter(t => t.created && t.created.getMonth()+1 == tm && t.created.getFullYear() == fullY);
+        document.getElementById('ddTitle').innerText = `Chamados de ${clickedLabel}`;
+    }
+
+    openDrillDown(filtered);
+}
+
+function openDrillDown(tickets) {
+    const tbody = document.querySelector('#ddTable tbody');
+    tbody.innerHTML = "";
+    
+    if(tickets.length === 0) {
+        tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; padding:20px;'>Nenhum chamado encontrado.</td></tr>";
+    } else {
+        tickets.forEach(t => {
+            const dt = t.created ? t.created.toLocaleDateString('pt-BR') : '-';
+            tbody.innerHTML += `
+                <tr>
+                    <td style="font-weight:bold; color:var(--brand-blue);">${t.id || '-'}</td>
+                    <td>${t.summary || '-'}</td>
+                    <td><span class="sla-badge" style="background:#eee; color:#333;">${t.status}</span></td>
+                    <td>${t.assignee}</td>
+                    <td>${dt}</td>
+                </tr>
+            `;
+        });
+    }
+    
+    document.getElementById('drillDownModal').classList.add('open');
+}
+
+function closeDrillDown() {
+    document.getElementById('drillDownModal').classList.remove('open');
+}
 
 initCharts(); loadAutoCSV();

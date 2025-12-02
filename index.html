@@ -9,6 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.1.0/dist/chartjs-plugin-datalabels.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="light-mode">
@@ -26,6 +27,7 @@
             <div class="header-actions">
                 <button class="btn-action btn-theme" onclick="toggleTheme()"><span id="themeIcon">🌙</span> Tema</button>
                 <input type="file" id="csvInput" accept=".csv" onchange="handleFileSelect(event)">
+                <button class="btn-action" onclick="document.getElementById('csvInput').click()"><span>📂</span> Importar</button>
                 <button class="btn-action btn-export" onclick="downloadCSV()"><span>⬇️</span> Exportar</button>
             </div>
             <div style="text-align: right; font-size: 0.75rem; color: var(--text-muted); margin-top: 5px;">Base Relatório JIRA: <span id="currentDate"></span></div>
@@ -118,6 +120,29 @@
         <div class="fs-table-container perf-table-wrapper" id="fsTableWrapper"><table class="perf-table" id="fsTable"><thead></thead><tbody></tbody></table></div>
         <img src="logo.png" class="fs-logo" alt="Logo FS">
         <div id="fsFooterMsg" class="fs-footer-msg">Você chegou ao fim da apresentação.</div>
+    </div>
+</div>
+
+<div id="drillDownModal" class="fs-modal" style="z-index: 10005;">
+    <div class="fs-content" style="height: 80vh; width: 90%; max-width: 1000px;">
+        <div class="fs-header">
+            <span id="ddTitle">Lista de Chamados</span>
+            <button class="fs-close-btn" onclick="closeDrillDown()">&times;</button>
+        </div>
+        <div class="fs-table-container active" style="display:block; flex:1;">
+            <table class="perf-table" id="ddTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Resumo</th>
+                        <th>Status</th>
+                        <th>Responsável</th>
+                        <th>Data</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 </div>
 
