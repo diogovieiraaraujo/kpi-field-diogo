@@ -16,20 +16,16 @@ const sideLabelsPlugin = {
         const { ctx } = chart; const padding=5; const lineLength=10; const textPadding=3;
         const isLight = document.body.classList.contains('light-mode');
         const textColor = isLight ? '#000000' : '#FFFFFF';
-        
         const meta0 = chart.getDatasetMeta(0);
         if(!meta0 || !meta0.data.length) return;
-
         meta0.data.forEach((barPoint, dataIndex) => {
             let stackRightEdge = barPoint.x + barPoint.width / 2;
             chart.data.datasets.forEach((dataset, datasetIndex) => {
                 if (dataset.type==='line' || dataset.data[dataIndex]===0 || dataset.label==='Total') return;
                 const meta = chart.getDatasetMeta(datasetIndex); 
                 if(meta.hidden) return;
-                
                 const element = meta.data[dataIndex];
                 if(!element) return;
-                
                 const segmentCenterY = element.getCenterPoint().y;
                 const startX = stackRightEdge + padding; const endX = startX + lineLength; const textX = endX + textPadding;
                 ctx.save(); ctx.beginPath(); ctx.strokeStyle = dataset.backgroundColor; ctx.lineWidth = 1;
@@ -57,7 +53,6 @@ function initCharts() {
         const defaultPadding = (type === 'pie' || type === 'doughnut') 
             ? { padding: 20 } 
             : { padding: { top: 30, right: 35, left: 10, bottom: 10 } }; 
-        
         const onClickHandler = (evt, elements, chart) => {
             if (elements.length > 0) {
                 const index = elements[0].index;
@@ -65,18 +60,14 @@ function initCharts() {
                 handleChartClick(id, index, datasetIndex, chart);
             }
         };
-
         return new Chart(ctx, { 
             type: type, 
             data: { labels:[], datasets:[] }, 
             options: { 
-                responsive: true, 
-                maintainAspectRatio: false, 
-                layout: defaultPadding, 
+                responsive: true, maintainAspectRatio: false, layout: defaultPadding, 
                 plugins: { legend: { display: false } }, 
                 scales: (type!=='pie'&&type!=='doughnut')?{x:{grid:{color:'#333'}},y:{grid:{color:'#333'}}}:{}, 
-                onClick: onClickHandler, 
-                ...cfg 
+                onClick: onClickHandler, ...cfg 
             } 
         });
     };
@@ -89,22 +80,16 @@ function initCharts() {
     charts.type = createChart('typeChart', 'pie', { plugins: { legend: outsideLabelsConfig } });
     charts.sla = createChart('slaChart', 'doughnut', { cutout:'65%', plugins: { legend: outsideLabelsConfig } });
     charts.status = createChart('statusChart', 'bar', {});
-    
     charts.mVol = createChart('monthlyChart', 'line', {});
     charts.mSla = createChart('monthlySlaChart', 'doughnut', { cutout:'65%', plugins: { legend: outsideLabelsConfig } });
     charts.mUnits = createChart('monthlyUnitsChart', 'bar', { indexAxis:'y' });
     charts.mStatus = createChart('monthlyStatusChart', 'bar', {});
     charts.mType = createChart('monthlyTypeChart', 'pie', { plugins: { legend: outsideLabelsConfig } });
-    
     charts.mAss = createChart('monthlyAssigneeChart', 'bar', { 
         scales:{ x:{stacked:true}, y:{stacked:true} }, 
-        plugins:{
-            legend:{ display:true, position:'bottom', labels:{ filter: (i)=>i.text!=='Total' } }, 
-            sideLabels: sideLabelsPlugin
-        }, 
+        plugins:{ legend:{ display:true, position:'bottom', labels:{ filter: (i)=>i.text!=='Total' } }, sideLabels: sideLabelsPlugin }, 
         layout: { padding: { top: 30, right: 50, left: 10, bottom: 10 } } 
     });
-    
     updateChartTheme();
 }
 
@@ -162,12 +147,8 @@ function processCSV(text, isAuto=false) {
 
         if(cDt) {
             data.push({ 
-                created: cDt, 
-                updated: uDt, 
-                deadline: parseDt(row[map.deadline]), 
-                status: clean(row[map.status]), 
-                assignee: clean(row[map.assignee])||'N/A', 
-                type: clean(row[map.type]), 
+                created: cDt, updated: uDt, deadline: parseDt(row[map.deadline]), status: clean(row[map.status]), 
+                assignee: clean(row[map.assignee])||'N/A', type: clean(row[map.type]), 
                 location: map.loc>-1?clean(row[map.loc]):'Geral',
                 id: map.id > -1 ? clean(row[map.id]) : `REQ-${i}`,
                 summary: map.summary > -1 ? clean(row[map.summary]) : 'Sem resumo'
@@ -185,7 +166,41 @@ function processCSV(text, isAuto=false) {
     logMsg(`Sucesso! ${data.length} registros carregados.`);
 }
 
-function formatDuration(ms) { if(!ms||ms<0)return "-"; const h=Math.floor(ms/3600000), d=Math.floor(h/24); return d>0?`${d}d ${h%24}h`:`${h}h`; }
+// --- CÁLCULO DE HORAS ÚTEIS (SEG-SEX 08:00 - 18:00) ---
+function calculateBusinessTime(start, end) {
+    if (start >= end) return 0;
+    const startHour = 8; const endHour = 18;
+    let totalMs = 0;
+    let current = new Date(start);
+
+    while (current < end) {
+        const day = current.getDay();
+        if (day === 0 || day === 6) {
+            current.setHours(0,0,0,0); current.setDate(current.getDate() + 1); continue;
+        }
+        const workStart = new Date(current); workStart.setHours(startHour, 0, 0, 0);
+        const workEnd = new Date(current); workEnd.setHours(endHour, 0, 0, 0);
+
+        if (current >= workEnd) {
+            current.setHours(0,0,0,0); current.setDate(current.getDate() + 1); continue;
+        }
+        if (current < workStart) current = workStart;
+        
+        let effectiveEnd = new Date(Math.min(end, workEnd));
+        if (effectiveEnd > current) totalMs += (effectiveEnd - current);
+        
+        current.setDate(current.getDate() + 1); current.setHours(0, 0, 0, 0);
+    }
+    return totalMs;
+}
+
+function formatDuration(ms) { 
+    if(!ms||ms<0)return "-"; 
+    const hours = Math.floor(ms / 3600000);
+    const days = Math.floor(hours / 10); 
+    const remHours = hours % 10;
+    return days > 0 ? `${days}d ${remHours}h` : `${hours}h`; 
+}
 
 function recalculateKPIs(data) {
     const s = {trend:{},loc:{},ass:{},type:{},status:{},slaOk:0,slaTot:0,durSum:0,durCount:0};
@@ -194,7 +209,10 @@ function recalculateKPIs(data) {
         s.trend[k]=(s.trend[k]||0)+1; s.loc[t.location]=(s.loc[t.location]||0)+1; s.ass[t.assignee]=(s.ass[t.assignee]||0)+1; s.type[t.type]=(s.type[t.type]||0)+1; s.status[t.status]=(s.status[t.status]||0)+1;
         const isRes = ['resolvido','fechada','concluído'].includes(t.status.toLowerCase());
         if(t.deadline) { s.slaTot++; if((isRes&&t.updated<=t.deadline)||(!isRes&&new Date()<=t.deadline)) s.slaOk++; }
-        if(isRes && t.updated) { const d=t.updated-t.created; if(d>0){ s.durSum+=d; s.durCount++; } }
+        if(isRes && t.updated) { 
+            const d = calculateBusinessTime(t.created, t.updated); 
+            if(d>0){ s.durSum+=d; s.durCount++; } 
+        }
     });
     document.getElementById('kpiTotal').innerText = data.length; document.getElementById('kpiSLA').innerText = s.slaTot?((s.slaOk/s.slaTot)*100).toFixed(1)+"%":"-"; document.getElementById('kpiSMA').innerText = s.durCount?formatDuration(s.durSum/s.durCount):"-";
     const topL = Object.entries(s.loc).sort((a,b)=>b[1]-a[1])[0]; document.getElementById('kpiLocation').innerText = topL?topL[0]:"-";
@@ -217,40 +235,20 @@ function updateMonthSelect() { monthSelect.innerHTML=""; const y=yearSelect.valu
 function generateInsights(count, slaPerc, tmaMs, avgCount, avgSla, avgTma) {
     let reason = "Dentro do esperado.";
     let action = "Manter padrão.";
-
-    const isSlaBad = slaPerc < 75; 
-    const isSlaGreat = slaPerc > 90;
-    const isVolHigh = count > (avgCount * 1.3); 
-    const isVolLow = count < (avgCount * 0.5); 
+    const isSlaBad = slaPerc < 75; const isSlaGreat = slaPerc > 90;
+    const isVolHigh = count > (avgCount * 1.3); const isVolLow = count < (avgCount * 0.5); 
     const isSlow = tmaMs > (avgTma * 1.2); 
 
     if (isSlaBad) {
-        if (isVolHigh) {
-            reason = "Sobrecarga de chamados impactando prazos.";
-            action = "Redistribuir tickets ou pausar novas atribuições.";
-        } else if (isSlow) {
-            reason = "Atendimentos demorados (TMA alto).";
-            action = "Verificar complexidade ou treinar em resolução.";
-        } else {
-            reason = "Baixo cumprimento de prazos pontual.";
-            action = "Revisar priorização de fila.";
-        }
+        if (isVolHigh) { reason = "Sobrecarga de chamados impactando prazos."; action = "Redistribuir tickets ou pausar novas atribuições."; }
+        else if (isSlow) { reason = "Atendimentos demorados (TMA alto)."; action = "Verificar complexidade ou treinar em resolução."; }
+        else { reason = "Baixo cumprimento de prazos pontual."; action = "Revisar priorização de fila."; }
     } else if (isSlaGreat) {
-        if (isVolHigh) {
-            reason = "Alta performance com volume elevado.";
-            action = "Reconhecimento ou mentorar equipe.";
-        } else {
-            reason = "Prazos cumpridos com excelência.";
-            action = "Avaliar aumento gradativo de carga.";
-        }
+        if (isVolHigh) { reason = "Alta performance com volume elevado."; action = "Reconhecimento ou mentorar equipe."; }
+        else { reason = "Prazos cumpridos com excelência."; action = "Avaliar aumento gradativo de carga."; }
     } else {
-        if (isSlow) {
-            reason = "Prazos ok, mas resolução lenta.";
-            action = "Focar em agilidade técnica.";
-        } else if (isVolLow) {
-            reason = "Volume abaixo da média da equipe.";
-            action = "Assumir tarefas de apoio ou backlog.";
-        }
+        if (isSlow) { reason = "Prazos ok, mas resolução lenta."; action = "Focar em agilidade técnica."; }
+        else if (isVolLow) { reason = "Volume abaixo da média da equipe."; action = "Assumir tarefas de apoio ou backlog."; }
     }
     return { reason, action };
 }
@@ -279,21 +277,15 @@ function updateMonthlyView() {
         const addD = (o, k) => {
             if (!o[k]) o[k] = { count: 0, slaOk: 0, slaTot: 0, durSum: 0, durCount: 0 };
             o[k].count++;
-            if (t.deadline) {
-                o[k].slaTot++;
-                if (t.updated <= t.deadline) o[k].slaOk++;
-            }
-            const d = t.updated - t.created;
+            if (t.deadline) { o[k].slaTot++; if (t.updated <= t.deadline) o[k].slaOk++; }
+            const d = calculateBusinessTime(t.created, t.updated);
             if (d > 0) { o[k].durSum += d; o[k].durCount++; }
         };
         addD(det.ass, t.assignee);
         addD(det.unit, t.location);
 
-        if (t.deadline) {
-            s.slaTot++;
-            if (t.updated <= t.deadline) s.slaOk++;
-        }
-        const dur = t.updated - t.created;
+        if (t.deadline) { s.slaTot++; if (t.updated <= t.deadline) s.slaOk++; }
+        const dur = calculateBusinessTime(t.created, t.updated);
         if (dur > 0) { s.durSum += dur; s.durCount++; }
     });
 
@@ -354,25 +346,28 @@ function updateMonthlyView() {
     charts.mAss.data.datasets = [...unitDS, totalDS];
     charts.mAss.update();
 
-    const renderTable = (id, dataObj, isAnalyst) => {
+    const renderTable = (id, dataObj, type) => {
         const tbody = document.querySelector(`#${id} tbody`);
         tbody.innerHTML = "";
         const entries = Object.entries(dataObj).filter(([k,v]) => k !== 'N/A').sort((a, b) => b[1].count - a[1].count);
-        let totalC = 0, totalSla = 0, totalTma = 0, count = 0;
-        entries.forEach(([_, v]) => {
-            totalC += v.count;
-            if(v.slaTot) totalSla += (v.slaOk/v.slaTot);
-            if(v.durCount) totalTma += (v.durSum/v.durCount);
-            count++;
-        });
-        const avgCount = count ? totalC / count : 0;
-        const avgTma = count ? totalTma / count : 0;
+        
+        // Média Geral para Insights
+        let totalC=0, totalSla=0, totalTma=0, count=0;
+        entries.forEach(([_,v])=>{ totalC+=v.count; if(v.slaTot)totalSla+=(v.slaOk/v.slaTot); if(v.durCount)totalTma+=(v.durSum/v.durCount); count++; });
+        const avgCount = count?totalC/count:0; const avgTma = count?totalTma/count:0;
+
         entries.forEach(([k, v]) => {
             const p = v.slaTot ? ((v.slaOk / v.slaTot) * 100).toFixed(1) : 0;
             const tmaVal = v.durCount ? (v.durSum / v.durCount) : 0;
             const c = p >= 70 ? 'sla-ok' : 'sla-nok';
-            let rowHtml = `<tr><td><strong>${k}</strong></td><td>${v.count}</td><td><span class="sla-badge ${c}">${p}%</span></td><td>${formatDuration(tmaVal)}</td>`;
-            if (isAnalyst) {
+            
+            let rowHtml = `<tr><td><strong>${k}</strong></td><td>${v.count}</td>`;
+            
+            // Células interativas (SLA e TMA) para Analista (assignee) E Unidade (unit)
+            rowHtml += `<td class="clickable-cell" onclick="handleMetricClick('${k}', 'sla', '${type}')"><span class="sla-badge ${c}">${p}%</span></td>`;
+            rowHtml += `<td class="clickable-cell" onclick="handleMetricClick('${k}', 'tma', '${type}')">${formatDuration(tmaVal)}</td>`;
+            
+            if (type === 'assignee') {
                 const insight = generateInsights(v.count, parseFloat(p), tmaVal, avgCount, 70, avgTma);
                 rowHtml += `<td>${insight.reason}</td><td>${insight.action}</td>`;
             }
@@ -380,8 +375,95 @@ function updateMonthlyView() {
             tbody.innerHTML += rowHtml;
         });
     };
-    renderTable('tableAssignee', det.ass, true); 
-    renderTable('tableUnit', det.unit, false);
+    renderTable('tableAssignee', det.ass, 'assignee'); 
+    renderTable('tableUnit', det.unit, 'unit');
+}
+
+// --- FUNÇÃO UNIFICADA DE CLICK NA TABELA (Analista e Unidade) ---
+function handleMetricClick(entityName, metricType, entityType) {
+    const y = yearSelect.value;
+    const m = monthSelect.value;
+    
+    // Filtra chamados do mês
+    let tickets = allTickets.filter(t => {
+        const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(t.status.toLowerCase());
+        return isRes && t.updated && t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
+    });
+
+    // Filtra pela entidade (Analista ou Unidade)
+    if (entityType === 'assignee') {
+        tickets = tickets.filter(t => t.assignee === entityName);
+    } else {
+        tickets = tickets.filter(t => t.location === entityName);
+    }
+
+    let title = "";
+    
+    // Lógica para filtrar apenas os "ruins" e gerar sugestão
+    if (metricType === 'sla') {
+        title = `Chamados fora do Prazo - ${entityName}`;
+        tickets = tickets.filter(t => {
+            if(!t.deadline) return false;
+            return t.updated > t.deadline; 
+        }).map(t => {
+            if(entityType === 'assignee') t.correction = "Monitorar prazos. Priorizar filas críticas.";
+            else t.correction = "Verificar rota logística, acesso à unidade ou backlog local.";
+            return t;
+        });
+    } 
+    else if (metricType === 'tma') {
+        title = `Chamados com TMA Alto - ${entityName}`;
+        // Calcula a média deste grupo específico
+        const totalDur = tickets.reduce((acc, t) => acc + calculateBusinessTime(t.created, t.updated), 0);
+        const avgDur = tickets.length ? totalDur / tickets.length : 0;
+        
+        tickets = tickets.filter(t => {
+            const d = calculateBusinessTime(t.created, t.updated);
+            return d > avgDur; // Mostra apenas os que estão acima da média DESTE grupo
+        }).map(t => {
+            if(entityType === 'assignee') t.correction = "Duração acima da média. Avaliar complexidade ou bloqueios.";
+            else t.correction = "Demora no atendimento local. Checar infraestrutura ou burocracia de acesso.";
+            return t;
+        });
+    }
+
+    openDrillDown(tickets, title, true);
+}
+
+function openDrillDown(tickets, title = "Detalhes", showCorrection = false) {
+    const tableHeader = document.querySelector('#ddTable thead tr');
+    const tbody = document.querySelector('#ddTable tbody');
+    tbody.innerHTML = "";
+    
+    if(title) document.getElementById('ddTitle').innerText = title;
+
+    if (showCorrection) {
+        tableHeader.innerHTML = `<th>ID</th><th>Resumo</th><th>Status</th><th>Data Res.</th><th>Correção Sugerida</th>`;
+    } else {
+        tableHeader.innerHTML = `<th>ID</th><th>Resumo</th><th>Status</th><th>Responsável</th><th>Data</th>`;
+    }
+    
+    if(tickets.length === 0) {
+        tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; padding:20px;'>Nenhum impacto negativo encontrado neste critério.</td></tr>";
+    } else {
+        tickets.forEach(t => {
+            const dt = t.updated ? t.updated.toLocaleDateString('pt-BR') : '-';
+            let rowContent = `
+                <td style="font-weight:bold; color:var(--brand-blue);">${t.id || '-'}</td>
+                <td>${t.summary || '-'}</td>
+                <td><span class="sla-badge" style="background:#eee; color:#333;">${t.status}</span></td>
+            `;
+            
+            if (showCorrection) {
+                rowContent += `<td>${dt}</td><td style="color:var(--danger); font-weight:600;">${t.correction || '-'}</td>`;
+            } else {
+                const dtCria = t.created ? t.created.toLocaleDateString('pt-BR') : '-';
+                rowContent += `<td>${t.assignee}</td><td>${dtCria}</td>`;
+            }
+            tbody.innerHTML += `<tr>${rowContent}</tr>`;
+        });
+    }
+    document.getElementById('drillDownModal').classList.add('open');
 }
 
 function toggleTheme() { 
@@ -433,7 +515,6 @@ function renderFs() {
     document.getElementById('fsChartTitle').innerText = fsTitles[fsIdx] || "Detalhe";
     document.getElementById('fsFooterMsg').classList.toggle('visible', fsIdx===7);
     const cvsWrap = document.getElementById('fsCanvasWrapper'); const tblWrap = document.getElementById('fsTableWrapper');
-    
     if(fsIdx < 6) {
         cvsWrap.style.display = 'block'; tblWrap.classList.remove('active');
         const ref = [{c:charts.mVol},{c:charts.mSla},{c:charts.mStatus},{c:charts.mType},{c:charts.mUnits},{c:charts.mAss}][fsIdx];
@@ -446,8 +527,7 @@ function renderFs() {
             type: ref.c.config.type, 
             data: JSON.parse(JSON.stringify(ref.c.config.data)), 
             options: { 
-                ...ref.c.config.options, 
-                maintainAspectRatio: false, 
+                ...ref.c.config.options, maintainAspectRatio: false, 
                 plugins: { 
                     ...ref.c.config.options.plugins, 
                     legend: { display: showLegend, position:'bottom', labels:{color:fsColor, filter: (i)=>i.text!=='Total'} } 
@@ -465,42 +545,26 @@ function renderFs() {
 }
 document.addEventListener('keydown', e => { if(document.getElementById('fsModal').classList.contains('open')) { if(e.key=='ArrowLeft')changeFullscreenChart(-1); if(e.key=='ArrowRight')changeFullscreenChart(1); if(e.key=='Escape')closeFullscreenMode(); } });
 
-// --- LÓGICA DO DRILL DOWN COM PAGINAÇÃO ---
-let currentDrillDownData = [];
-let currentPage = 1;
-const itemsPerPage = 50; // Limite leve para evitar travamento
-
 function handleChartClick(chartId, index, datasetIndex, chart) {
     const clickedLabel = chart.data.labels[index];
     const y = yearSelect.value;
     const m = monthSelect.value;
-    
     const isMonthlyTab = document.getElementById('tab-mensal').classList.contains('active');
     
     let filtered = allTickets;
+    const isDeliveryChart = ['monthlySlaChart', 'slaChart', 'monthlyUnitsChart', 'locationChart', 'monthlyAssigneeChart', 'assigneeChart'].includes(chartId);
 
-    // DEFINIÇÃO DO TIPO DE FILTRO: CRIAÇÃO OU RESOLUÇÃO
-    const isDeliveryChart = [
-        'monthlySlaChart', 'slaChart',
-        'monthlyUnitsChart', 'locationChart',
-        'monthlyAssigneeChart', 'assigneeChart'
-    ].includes(chartId);
-
-    // Se estiver na aba mensal, aplica o filtro de data base
     if (isMonthlyTab) {
         if (isDeliveryChart) {
-            // Filtro por Data de Resolução (Updated)
             filtered = allTickets.filter(t => {
                 const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(t.status.toLowerCase());
                 return isRes && t.updated && t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
             });
         } else {
-            // Filtro por Data de Criação (Created)
             filtered = allTickets.filter(t => t.created && t.created.getFullYear().toString() === y && (t.created.getMonth() + 1).toString() === m);
         }
     }
 
-    // APLICAÇÃO DOS FILTROS ESPECÍFICOS DE CADA GRÁFICO
     if (chartId === 'monthlyStatusChart' || chartId === 'statusChart') {
         filtered = filtered.filter(t => t.status === clickedLabel);
         document.getElementById('ddTitle').innerText = `Chamados - Status: ${clickedLabel}`;
@@ -526,7 +590,6 @@ function handleChartClick(chartId, index, datasetIndex, chart) {
     else if (chartId === 'monthlyAssigneeChart' || chartId === 'assigneeChart') {
         const datasetLabel = chart.data.datasets[datasetIndex].label;
         filtered = filtered.filter(t => t.assignee === clickedLabel);
-        
         if(datasetLabel !== 'Total') {
             filtered = filtered.filter(t => t.location === datasetLabel);
             document.getElementById('ddTitle').innerText = `Chamados - ${clickedLabel} em ${datasetLabel}`;
@@ -535,75 +598,16 @@ function handleChartClick(chartId, index, datasetIndex, chart) {
         }
     }
     else if (chartId === 'monthlyChart') {
-        // Volume Diário
         filtered = filtered.filter(t => t.created.getDate().toString() === clickedLabel);
         document.getElementById('ddTitle').innerText = `Chamados do dia ${clickedLabel}/${m}/${y}`;
     }
     else if (chartId === 'trendChart') {
-        // Tendência
         const [tm, ty] = clickedLabel.split('/');
         const fullY = "20" + ty;
         filtered = allTickets.filter(t => t.created && t.created.getMonth()+1 == tm && t.created.getFullYear() == fullY);
         document.getElementById('ddTitle').innerText = `Chamados de ${clickedLabel}`;
     }
-
     openDrillDown(filtered);
-}
-
-function openDrillDown(tickets) {
-    currentDrillDownData = tickets;
-    currentPage = 1;
-    renderDrillDownPage();
-    document.getElementById('drillDownModal').classList.add('open');
-}
-
-function renderDrillDownPage() {
-    const tbody = document.querySelector('#ddTable tbody');
-    tbody.innerHTML = "";
-    
-    if(currentDrillDownData.length === 0) {
-        tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; padding:20px;'>Nenhum chamado encontrado.</td></tr>";
-        document.getElementById('pageInfo').innerText = "Página 1 de 1";
-        return;
-    }
-
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = Math.min(startIndex + itemsPerPage, currentDrillDownData.length);
-    const pageItems = currentDrillDownData.slice(startIndex, endIndex);
-
-    // Usando DocumentFragment para performance máxima
-    const fragment = document.createDocumentFragment();
-    
-    pageItems.forEach(t => {
-        const dt = t.created ? t.created.toLocaleDateString('pt-BR') : '-';
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td style="font-weight:bold; color:var(--brand-blue);">${t.id || '-'}</td>
-            <td>${t.summary || '-'}</td>
-            <td><span class="sla-badge" style="background:#eee; color:#333;">${t.status}</span></td>
-            <td>${t.assignee}</td>
-            <td>${dt}</td>
-        `;
-        fragment.appendChild(tr);
-    });
-    
-    tbody.appendChild(fragment);
-
-    // Atualiza info de página
-    const totalPages = Math.ceil(currentDrillDownData.length / itemsPerPage);
-    document.getElementById('pageInfo').innerText = `Página ${currentPage} de ${totalPages} (${currentDrillDownData.length} registros)`;
-}
-
-function changeDrillDownPage(direction) {
-    const totalPages = Math.ceil(currentDrillDownData.length / itemsPerPage);
-    const newPage = currentPage + direction;
-    
-    if (newPage >= 1 && newPage <= totalPages) {
-        currentPage = newPage;
-        renderDrillDownPage();
-        // Rola a tabela para o topo ao mudar de página
-        document.querySelector('#drillDownModal .fs-table-container').scrollTop = 0;
-    }
 }
 
 function closeDrillDown() {
