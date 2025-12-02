@@ -124,12 +124,13 @@
 </div>
 
 <div id="drillDownModal" class="fs-modal" style="z-index: 10005;">
-    <div class="fs-content" style="height: 80vh; width: 90%; max-width: 1000px;">
+    <div class="fs-content" style="height: 85vh; width: 95%; max-width: 1000px; display: flex; flex-direction: column;">
         <div class="fs-header">
             <span id="ddTitle">Lista de Chamados</span>
             <button class="fs-close-btn" onclick="closeDrillDown()">&times;</button>
         </div>
-        <div class="fs-table-container active" style="display:block; flex:1;">
+        
+        <div class="fs-table-container active" style="display:block; flex:1; overflow-y: auto;">
             <table class="perf-table" id="ddTable">
                 <thead>
                     <tr>
@@ -142,6 +143,12 @@
                 </thead>
                 <tbody></tbody>
             </table>
+        </div>
+
+        <div class="pagination-controls" style="padding-top: 15px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+            <button class="btn-action btn-theme" onclick="changeDrillDownPage(-1)">&#10094; Anterior</button>
+            <span id="pageInfo" style="font-weight: 600; color: var(--text-muted);">Página 1 de 1</span>
+            <button class="btn-action btn-theme" onclick="changeDrillDownPage(1)">Próximo &#10095;</button>
         </div>
     </div>
 </div>

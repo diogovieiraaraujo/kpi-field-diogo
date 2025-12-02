@@ -465,7 +465,11 @@ function renderFs() {
 }
 document.addEventListener('keydown', e => { if(document.getElementById('fsModal').classList.contains('open')) { if(e.key=='ArrowLeft')changeFullscreenChart(-1); if(e.key=='ArrowRight')changeFullscreenChart(1); if(e.key=='Escape')closeFullscreenMode(); } });
 
-// --- LÓGICA DO DRILL DOWN (CORRIGIDA) ---
+// --- LÓGICA DO DRILL DOWN COM PAGINAÇÃO ---
+let currentDrillDownData = [];
+let currentPage = 1;
+const itemsPerPage = 50; // Limite leve para evitar travamento
+
 function handleChartClick(chartId, index, datasetIndex, chart) {
     const clickedLabel = chart.data.labels[index];
     const y = yearSelect.value;
@@ -476,9 +480,6 @@ function handleChartClick(chartId, index, datasetIndex, chart) {
     let filtered = allTickets;
 
     // DEFINIÇÃO DO TIPO DE FILTRO: CRIAÇÃO OU RESOLUÇÃO
-    // Gráficos de Entregas (SLA, Analistas, Unidades, Performance) -> Filtra por RESOLVIDO no mês
-    // Gráficos de Volume, Status, Tipos -> Filtra por CRIADO no mês (ou status atual)
-    
     const isDeliveryChart = [
         'monthlySlaChart', 'slaChart',
         'monthlyUnitsChart', 'locationChart',
@@ -495,7 +496,6 @@ function handleChartClick(chartId, index, datasetIndex, chart) {
             });
         } else {
             // Filtro por Data de Criação (Created)
-            // Para 'monthlyChart' (volume), 'monthlyStatusChart', 'monthlyTypeChart'
             filtered = allTickets.filter(t => t.created && t.created.getFullYear().toString() === y && (t.created.getMonth() + 1).toString() === m);
         }
     }
@@ -535,12 +535,12 @@ function handleChartClick(chartId, index, datasetIndex, chart) {
         }
     }
     else if (chartId === 'monthlyChart') {
-        // Volume Diário (Label = dia do mês)
+        // Volume Diário
         filtered = filtered.filter(t => t.created.getDate().toString() === clickedLabel);
         document.getElementById('ddTitle').innerText = `Chamados do dia ${clickedLabel}/${m}/${y}`;
     }
     else if (chartId === 'trendChart') {
-        // Tendência (Label = mm/yy)
+        // Tendência
         const [tm, ty] = clickedLabel.split('/');
         const fullY = "20" + ty;
         filtered = allTickets.filter(t => t.created && t.created.getMonth()+1 == tm && t.created.getFullYear() == fullY);
@@ -551,27 +551,59 @@ function handleChartClick(chartId, index, datasetIndex, chart) {
 }
 
 function openDrillDown(tickets) {
+    currentDrillDownData = tickets;
+    currentPage = 1;
+    renderDrillDownPage();
+    document.getElementById('drillDownModal').classList.add('open');
+}
+
+function renderDrillDownPage() {
     const tbody = document.querySelector('#ddTable tbody');
     tbody.innerHTML = "";
     
-    if(tickets.length === 0) {
+    if(currentDrillDownData.length === 0) {
         tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; padding:20px;'>Nenhum chamado encontrado.</td></tr>";
-    } else {
-        tickets.forEach(t => {
-            const dt = t.created ? t.created.toLocaleDateString('pt-BR') : '-';
-            tbody.innerHTML += `
-                <tr>
-                    <td style="font-weight:bold; color:var(--brand-blue);">${t.id || '-'}</td>
-                    <td>${t.summary || '-'}</td>
-                    <td><span class="sla-badge" style="background:#eee; color:#333;">${t.status}</span></td>
-                    <td>${t.assignee}</td>
-                    <td>${dt}</td>
-                </tr>
-            `;
-        });
+        document.getElementById('pageInfo').innerText = "Página 1 de 1";
+        return;
     }
+
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = Math.min(startIndex + itemsPerPage, currentDrillDownData.length);
+    const pageItems = currentDrillDownData.slice(startIndex, endIndex);
+
+    // Usando DocumentFragment para performance máxima
+    const fragment = document.createDocumentFragment();
     
-    document.getElementById('drillDownModal').classList.add('open');
+    pageItems.forEach(t => {
+        const dt = t.created ? t.created.toLocaleDateString('pt-BR') : '-';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="font-weight:bold; color:var(--brand-blue);">${t.id || '-'}</td>
+            <td>${t.summary || '-'}</td>
+            <td><span class="sla-badge" style="background:#eee; color:#333;">${t.status}</span></td>
+            <td>${t.assignee}</td>
+            <td>${dt}</td>
+        `;
+        fragment.appendChild(tr);
+    });
+    
+    tbody.appendChild(fragment);
+
+    // Atualiza info de página
+    const totalPages = Math.ceil(currentDrillDownData.length / itemsPerPage);
+    document.getElementById('pageInfo').innerText = `Página ${currentPage} de ${totalPages} (${currentDrillDownData.length} registros)`;
+}
+
+function changeDrillDownPage(direction) {
+    const totalPages = Math.ceil(currentDrillDownData.length / itemsPerPage);
+    const newPage = currentPage + direction;
+    
+    if (newPage >= 1 && newPage <= totalPages) {
+        currentPage = newPage;
+        renderDrillDownPage();
+        // Rola a tabela para o topo ao mudar de página
+        document.querySelector('#drillDownModal .fs-table-container').scrollTop = 0;
+    }
 }
 
 function closeDrillDown() {
