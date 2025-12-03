@@ -336,27 +336,6 @@ const yearSelect = document.getElementById('yearSelect'), monthSelect = document
 function initMonthlyTab() { yearSelect.innerHTML=""; const ys=Object.keys(monthlyData).sort(); if(!ys.length)return; ys.forEach(y=>yearSelect.add(new Option(y,y))); yearSelect.value=ys[ys.length-1]; updateMonthSelect(); }
 function updateMonthSelect() { monthSelect.innerHTML=""; const y=yearSelect.value; if(!monthlyData[y])return; const ms=Object.keys(monthlyData[y]).sort((a,b)=>a-b); ms.forEach(m=>monthSelect.add(new Option(mNames[m],m))); monthSelect.value=ms[ms.length-1]; updateMonthlyView(); }
 
-function generateInsights(count, slaPerc, tmaMs, avgCount, avgSla, avgTma) {
-    let reason = "Dentro do esperado.";
-    let action = "Manter padrão de atendimento.";
-    const isSlaBad = slaPerc < 75; const isSlaGreat = slaPerc > 90;
-    const isVolHigh = count > (avgCount * 1.3); const isVolLow = count < (avgCount * 0.5); 
-    const isSlow = tmaMs > (avgTma * 1.2); 
-
-    if (isSlaBad) {
-        if (isVolHigh) { reason = "Sobrecarga de chamados (Fila Cheia)."; action = "Priorizar acesso remoto p/ agilizar ou pedir apoio."; }
-        else if (isSlow) { reason = "Resoluções demoradas (Hardware/Rede?)."; action = "Verificar se há espera de peças ou escalonamento N3."; }
-        else { reason = "SLA crítico: Tickets vencendo."; action = "Focar nos chamados VIP/Críticos imediatos."; }
-    } else if (isSlaGreat) {
-        if (isVolHigh) { reason = "Alta eficiência técnica e operacional."; action = "Compartilhar dicas de troubleshooting com o time."; }
-        else { reason = "Entregas consistentes e no prazo."; action = "Manter rotina de verificações preventivas."; }
-    } else {
-        if (isSlow) { reason = "No prazo, mas tempo técnico alto."; action = "Otimizar scripts de correção ou ferramentas de acesso."; }
-        else if (isVolLow) { reason = "Baixa demanda de incidentes."; action = "Apoiar em inventário ou configurações de bancada."; }
-    }
-    return { reason, action };
-}
-
 function updateMonthlyView() {
     const y = yearSelect.value;
     const m = monthSelect.value;
@@ -464,10 +443,6 @@ function updateMonthlyView() {
         tbody.innerHTML = "";
         const entries = Object.entries(dataObj).filter(([k,v]) => k !== 'N/A').sort((a, b) => b[1].count - a[1].count);
         
-        let totalC=0, totalSla=0, totalTma=0, count=0;
-        entries.forEach(([_,v])=>{ totalC+=v.count; if(v.slaTot)totalSla+=(v.slaOk/v.slaTot); if(v.durCount)totalTma+=(v.durSum/v.durCount); count++; });
-        const avgCount = count?totalC/count:0; const avgTma = count?totalTma/count:0;
-
         entries.forEach(([k, v]) => {
             const p = v.slaTot ? ((v.slaOk / v.slaTot) * 100).toFixed(1) : 0;
             const tmaVal = v.durCount ? (v.durSum / v.durCount) : 0;
@@ -477,10 +452,7 @@ function updateMonthlyView() {
             rowHtml += `<td class="clickable-cell" onclick="handleMetricClick('${k}', 'sla', '${type}')"><span class="sla-badge ${c}">${p}%</span></td>`;
             rowHtml += `<td class="clickable-cell" onclick="handleMetricClick('${k}', 'tma', '${type}')">${formatDuration(tmaVal)}</td>`;
             
-            if (type === 'assignee') {
-                const insight = generateInsights(v.count, parseFloat(p), tmaVal, avgCount, 70, avgTma);
-                rowHtml += `<td>${insight.reason}</td><td>${insight.action}</td>`;
-            }
+            // REMOVIDO: Colunas de Diagnóstico e Ação para ficar igual ao painel da foto
             rowHtml += `</tr>`;
             tbody.innerHTML += rowHtml;
         });
