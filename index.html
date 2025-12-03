@@ -132,12 +132,19 @@
 </div>
 
 <div id="drillDownModal" class="fs-modal" style="z-index: 10005;">
-    <div class="fs-content" style="height: 80vh; width: 90%; max-width: 1000px;">
+    <div class="fs-content" style="height: 80vh; width: 90%; max-width: 1000px; display: flex; flex-direction: column;">
         <div class="fs-header">
             <span id="ddTitle">Lista de Chamados</span>
             <button class="fs-close-btn" onclick="closeDrillDown()">&times;</button>
         </div>
-        <div class="fs-table-container active" style="display:block; flex:1;">
+
+        <div id="ddPagination" class="pagination-controls">
+            <button class="btn-page" onclick="changeDrillDownPage(-1)" id="btnPrev">❮ Anterior</button>
+            <span id="pageInfo">Página 1 de 1 (0 registros)</span>
+            <button class="btn-page" onclick="changeDrillDownPage(1)" id="btnNext">Próximo ❯</button>
+        </div>
+
+        <div class="fs-table-container active" style="display:block; flex:1; overflow-y: auto;">
             <table class="perf-table" id="ddTable">
                 <thead>
                     <tr>

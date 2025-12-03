@@ -520,41 +520,67 @@ function handleMetricClick(entityName, metricType, entityType) {
     openDrillDown(tickets, title, true);
 }
 
-// --- FUNÇÃO CORRIGIDA PARA PERFORMANCE ---
+// --- VARIÁVEIS GLOBAIS DE PAGINAÇÃO ---
+let currentDrillDownData = [];
+let currentDrillDownPage = 1;
+const PAGE_SIZE = 50;
+let showCorrectionMode = false;
+
+// --- FUNÇÃO PRINCIPAL (ABRE O MODAL) ---
 function openDrillDown(tickets, title = "Detalhes", showCorrection = false) {
-    const tableHeader = document.querySelector('#ddTable thead tr');
-    const tbody = document.querySelector('#ddTable tbody');
-    
-    // 1. Limpa o conteúdo atual
-    tbody.innerHTML = "";
-    
+    // 1. Salva os dados no estado global
+    currentDrillDownData = tickets;
+    currentDrillDownPage = 1;
+    showCorrectionMode = showCorrection; // Salva se deve mostrar coluna de correção
+
+    // 2. Configura Título
     const titleEl = document.getElementById('ddTitle');
     if(title) titleEl.innerText = title;
 
+    // 3. Configura Cabeçalho da Tabela
+    const tableHeader = document.querySelector('#ddTable thead tr');
     if (showCorrection) {
         tableHeader.innerHTML = `<th>ID</th><th>Resumo</th><th>Status</th><th>Data Res.</th><th>Correção Sugerida</th>`;
     } else { 
         tableHeader.innerHTML = `<th>ID</th><th>Resumo</th><th>Status</th><th>Responsável</th><th>Data</th>`; 
     }
-    
-    if(tickets.length === 0) {
+
+    // 4. Renderiza a primeira página e abre o modal
+    renderDrillDownPage();
+    document.getElementById('drillDownModal').classList.add('open');
+}
+
+// --- FUNÇÃO DE RENDERIZAÇÃO DA PÁGINA ---
+function renderDrillDownPage() {
+    const tbody = document.querySelector('#ddTable tbody');
+    tbody.innerHTML = "";
+
+    // Se não tiver dados
+    if (currentDrillDownData.length === 0) {
         tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; padding:20px;'>Nenhum registro encontrado.</td></tr>";
-        document.getElementById('drillDownModal').classList.add('open');
+        document.getElementById('pageInfo').innerText = "0 registros";
+        document.getElementById('btnPrev').disabled = true;
+        document.getElementById('btnNext').disabled = true;
         return;
     }
 
-    // 2. Limite de Segurança: Renderizar no máximo 500 itens para não travar o DOM
-    const MAX_ITEMS = 500;
-    const renderData = tickets.slice(0, MAX_ITEMS);
+    // Cálculos de Paginação
+    const totalRecords = currentDrillDownData.length;
+    const totalPages = Math.ceil(totalRecords / PAGE_SIZE);
     
-    if (tickets.length > MAX_ITEMS) {
-        titleEl.innerText = `${title} (Exibindo ${MAX_ITEMS} de ${tickets.length} registros - Use Exportar para ver tudo)`;
-    }
+    // Garante que a página atual é válida
+    if (currentDrillDownPage < 1) currentDrillDownPage = 1;
+    if (currentDrillDownPage > totalPages) currentDrillDownPage = totalPages;
 
-    // 3. Construção em Batch: Cria uma string gigante
+    const startIdx = (currentDrillDownPage - 1) * PAGE_SIZE;
+    const endIdx = Math.min(startIdx + PAGE_SIZE, totalRecords);
+    
+    // Fatia os dados (Slice)
+    const pageData = currentDrillDownData.slice(startIdx, endIdx);
+
+    // Constrói o HTML (Batch String)
     let rowsHTML = "";
-
-    renderData.forEach(t => {
+    pageData.forEach(t => {
         const dt = t.updated ? t.updated.toLocaleDateString('pt-BR') : '-';
         
         let rowContent = `
@@ -563,7 +589,7 @@ function openDrillDown(tickets, title = "Detalhes", showCorrection = false) {
             <td><span class="sla-badge" style="background:#eee; color:#333;">${t.status}</span></td>
         `;
 
-        if (showCorrection) {
+        if (showCorrectionMode) {
             rowContent += `<td>${dt}</td><td style="color:var(--danger); font-weight:600;">${t.correction || '-'}</td>`;
         } else { 
             const dtCria = t.created ? t.created.toLocaleDateString('pt-BR') : '-'; 
@@ -573,10 +599,22 @@ function openDrillDown(tickets, title = "Detalhes", showCorrection = false) {
         rowsHTML += `<tr>${rowContent}</tr>`;
     });
 
-    // 4. Injeção Única: Atualiza o DOM apenas uma vez
     tbody.innerHTML = rowsHTML;
 
-    document.getElementById('drillDownModal').classList.add('open');
+    // Atualiza Controles de Paginação (Texto e Botões)
+    document.getElementById('pageInfo').innerText = `Página ${currentDrillDownPage} de ${totalPages} (${totalRecords} registros)`;
+    
+    document.getElementById('btnPrev').disabled = (currentDrillDownPage === 1);
+    document.getElementById('btnNext').disabled = (currentDrillDownPage === totalPages);
+
+    // Rola a tabela para o topo ao mudar de página
+    document.querySelector('.fs-table-container').scrollTop = 0;
+}
+
+// --- CONTROLE DOS BOTÕES ---
+function changeDrillDownPage(direction) {
+    currentDrillDownPage += direction;
+    renderDrillDownPage();
 }
 
 function closeDrillDown() {
