@@ -1,66 +1,101 @@
-// --- CONFIGURAÇÃO E UTILS ---
+// =========================================================================
+// SCRIPT.JS - VERSÃO COM PARSER DE DATA BR E CORREÇÃO MENSAL
+// =========================================================================
+
+// --- 1. CONFIGURAÇÃO E UTILS ---
+
 function logMsg(msg, isError=false) { 
     const el = document.getElementById('statusLog'); 
-    el.style.display='block'; 
-    el.style.backgroundColor=isError?'#f8d7da':'#d1e7dd'; 
-    el.style.color=isError?'#721c24':'#0f5132'; 
-    el.style.borderColor=isError?'#f5c6cb':'#badbcc';
-    el.innerText=msg; 
-    setTimeout(() => { if(!isError) el.style.display='none'; }, 5000);
+    if(el) {
+        el.style.display='block'; 
+        el.style.backgroundColor=isError?'#f8d7da':'#d1e7dd'; 
+        el.style.color=isError?'#721c24':'#0f5132'; 
+        el.style.borderColor=isError?'#f5c6cb':'#badbcc';
+        el.innerText=msg; 
+        setTimeout(() => { if(!isError) el.style.display='none'; }, isError ? 10000 : 5000);
+    }
+    if(isError) console.error(msg); else console.log(msg);
 }
 
 const distinctColors = ['#0055FF', '#D32F2F', '#00C853', '#F57C00', '#7B1FA2', '#00ACC1', '#C2185B', '#AFB42B', '#5D4037', '#616161', '#455A64', '#E64A19', '#512DA8', '#1976D2', '#388E3C', '#FBC02D', '#8E24AA', '#0288D1', '#689F38', '#E91E63'];
 
-// Analistas excluídos da visão de equipe
-const EXCLUDED_ANALYSTS = [
-    'Caíque Ferreira Batista', 'JEFERSON PITINGA NOGUEIRA', 'Automation for Jira', 'Vinicius Augusto Macedo Silva', 'System'
+// LISTA DE NOMES IGNORADOS
+const IGNORED_NAMES = [
+    'Automation for Jira', 'JEFERSON PITINGA NOGUEIRA', 'moises.cavalcante', 'MARIANNA LIRA MEDINA',
+    'Fabiana Ferreira Garcia de Oliveira', 'Joao Paulo de Macedo Torquato', 'Ramon Marchi',
+    'Regina Paulino Gouveia Cruz', 'marcos francisco delgado', 'Fabiana Rufina de Oliveira Sousa',
+    'Caíque Ferreira Batista', 'Vinicius Augusto Macedo Silva', 'System'
 ];
 
-const STORAGE_KEY = 'ic_dashboard_csv_data';
+const isExcluded = (name) => {
+    if (!name || name === 'N/A') return false; 
+    const n = name.toLowerCase().trim();
+    return IGNORED_NAMES.some(ignored => ignored.toLowerCase().trim() === n);
+};
 
-const sideLabelsPlugin = {
+const STORAGE_KEY = 'ic_dashboard_csv_data';
+let allTickets = [], monthlyData = {}, charts = {};
+
+// --- 2. PLUGIN GLOBAL PARA FULLSCREEN ---
+window.sideLabelsPlugin = {
     id: 'sideLabels',
     afterDatasetsDraw(chart, args, options) {
-        const { ctx } = chart; const padding=5; const lineLength=10; const textPadding=3;
-        const isLight = document.body.classList.contains('light-mode');
-        const textColor = isLight ? '#000000' : '#FFFFFF';
+        const { ctx } = chart;
         const meta0 = chart.getDatasetMeta(0);
         if(!meta0 || !meta0.data.length) return;
         meta0.data.forEach((barPoint, dataIndex) => {
             let stackRightEdge = barPoint.x + barPoint.width / 2;
             chart.data.datasets.forEach((dataset, datasetIndex) => {
                 if (dataset.type==='line' || dataset.data[dataIndex]===0 || dataset.label==='Total') return;
-                const meta = chart.getDatasetMeta(datasetIndex); 
-                if(meta.hidden) return;
-                const element = meta.data[dataIndex];
-                if(!element) return;
+                const meta = chart.getDatasetMeta(datasetIndex); if(meta.hidden) return;
+                const element = meta.data[dataIndex]; if(!element) return;
                 const segmentCenterY = element.getCenterPoint().y;
-                const startX = stackRightEdge + padding; const endX = startX + lineLength; const textX = endX + textPadding;
+                
+                // Detecção de tema para cor do texto
+                const isL = document.body.classList.contains('light-mode');
+                const txtColor = isL ? '#000' : '#fff';
+
                 ctx.save(); ctx.beginPath(); ctx.strokeStyle = dataset.backgroundColor; ctx.lineWidth = 1;
-                ctx.moveTo(startX, segmentCenterY); ctx.lineTo(endX, segmentCenterY); ctx.stroke();
-                ctx.font = 'bold 10px Montserrat'; ctx.fillStyle = textColor; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-                ctx.fillText(dataset.data[dataIndex], textX, segmentCenterY); ctx.restore();
+                ctx.moveTo(stackRightEdge + 5, segmentCenterY); ctx.lineTo(stackRightEdge + 15, segmentCenterY); ctx.stroke();
+                ctx.fillStyle = txtColor;
+                ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                ctx.fillText(dataset.data[dataIndex], stackRightEdge + 18, segmentCenterY); ctx.restore();
             });
         });
     }
 };
 
-try {
-    if(typeof ChartDataLabels !== 'undefined') {
-        Chart.register(ChartDataLabels);
-        Chart.defaults.set('plugins.datalabels', { color: '#E0E0E0', font: { weight: 'bold' }, formatter: Math.round, display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0, anchor: 'end', align: 'end' });
-    }
-    Chart.defaults.font.family = "'Montserrat', sans-serif";
-} catch(e) { logMsg("Erro Init: " + e.message, true); }
-
-let allTickets = [], monthlyData = {}, charts = {};
-
+// --- 3. INICIALIZAÇÃO DE GRÁFICOS ---
 function initCharts() {
+    if (typeof Chart === 'undefined') {
+        if(document.getElementById('chartError')) document.getElementById('chartError').style.display = 'block';
+        return;
+    }
+
+    try {
+        if(typeof ChartDataLabels !== 'undefined') {
+            Chart.register(ChartDataLabels);
+            Chart.defaults.font.family = "'Montserrat', sans-serif";
+            Chart.defaults.set('plugins.datalabels', { 
+                font: { weight: 'bold', family: "'Montserrat', sans-serif" }, 
+                formatter: Math.round, 
+                display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0, 
+                anchor: 'end', align: 'end' 
+            });
+        }
+    } catch(e) { console.warn("Erro plugins", e); }
+
     const createChart = (id, type, cfg) => {
         const ctx = document.getElementById(id); if(!ctx) return null;
-        const defaultPadding = (type === 'pie' || type === 'doughnut') 
-            ? { padding: 20 } 
-            : { padding: { top: 30, right: 35, left: 10, bottom: 10 } }; 
+        
+        const defaultPadding = (type === 'pie' || type === 'doughnut') ? { padding: 20 } : { padding: { top: 30, right: 35, left: 10, bottom: 10 } }; 
+        
+        let scalesConfig = {};
+        if (type !== 'pie' && type !== 'doughnut') {
+            scalesConfig = { x: { grid: { color: '#333' } }, y: { grid: { color: '#333' } } };
+            if (cfg.indexAxis === 'y') { scalesConfig.x.grace = '15%'; }
+        }
+
         const onClickHandler = (evt, elements, chart) => {
             if (elements.length > 0) {
                 const index = elements[0].index;
@@ -68,315 +103,434 @@ function initCharts() {
                 handleChartClick(id, index, datasetIndex, chart);
             }
         };
+
         return new Chart(ctx, { 
             type: type, 
             data: { labels:[], datasets:[] }, 
             options: { 
                 responsive: true, maintainAspectRatio: false, layout: defaultPadding, 
                 plugins: { legend: { display: false } }, 
-                scales: (type!=='pie'&&type!=='doughnut')?{x:{grid:{color:'#333'}},y:{grid:{color:'#333'}}}:{}, 
+                scales: scalesConfig, 
                 onClick: onClickHandler, ...cfg 
             } 
         });
     };
     
-    const outsideLabelsConfig = { position: 'bottom', labels: { color: '#E0E0E0' } };
+    const outsideLabelsConfig = { position: 'bottom', labels: { font: { family: "'Montserrat', sans-serif" } } };
+    const stackedBarConfig = {
+        scales:{ x:{stacked:true}, y:{stacked:true} }, 
+        plugins:{ legend:{ display:true, position:'bottom', labels:{ filter: (i)=>i.text!=='Total', font: { family: "'Montserrat', sans-serif" } } } }, 
+        layout: { padding: { top: 30, right: 20, left: 10, bottom: 10 } } 
+    };
 
     charts.trend = createChart('trendChart', 'line', {});
     charts.loc = createChart('locationChart', 'bar', {});
-    charts.ass = createChart('assigneeChart', 'bar', { indexAxis:'y' });
+    charts.ass = createChart('assigneeChart', 'bar', { indexAxis:'y', plugins: { legend: { display: true, position: 'bottom' } }, layout: { padding: { top: 10, right: 30, left: 10, bottom: 10 } } }); 
+    charts.mAss = createChart('monthlyAssigneeChart', 'bar', { ...stackedBarConfig, plugins: { ...stackedBarConfig.plugins, sideLabels: window.sideLabelsPlugin } });
+
     charts.type = createChart('typeChart', 'pie', { plugins: { legend: outsideLabelsConfig } });
+    charts.cat = createChart('categoryChart', 'pie', { plugins: { legend: outsideLabelsConfig } });
     charts.sla = createChart('slaChart', 'doughnut', { cutout:'65%', plugins: { legend: outsideLabelsConfig } });
     charts.status = createChart('statusChart', 'bar', {});
+    charts.reqGlobal = createChart('globalRequesterChart', 'bar', { indexAxis: 'y' });
+
+    charts.mCCusto = createChart('monthlyCCustoChart', 'bar', { indexAxis: 'y' });
+    charts.mRole = createChart('monthlyRoleChart', 'bar', { indexAxis: 'y' });
+    charts.gCCusto = createChart('generalCCustoChart', 'bar', { indexAxis: 'y' });
+    charts.gRole = createChart('generalRoleChart', 'bar', { indexAxis: 'y' });
+
+    const createUnitCharts = (prefix) => {
+        charts[prefix + 'Extrema'] = createChart(prefix + 'Extrema', 'bar', { indexAxis: 'y' });
+        charts[prefix + 'Serra'] = createChart(prefix + 'Serra', 'bar', { indexAxis: 'y' });
+        charts[prefix + 'Embu'] = createChart(prefix + 'Embu', 'bar', { indexAxis: 'y' });
+        charts[prefix + 'Vila'] = createChart(prefix + 'Vila', 'bar', { indexAxis: 'y' });
+        charts[prefix + 'Duque'] = createChart(prefix + 'Duque', 'bar', { indexAxis: 'y' });
+        charts[prefix + 'Other'] = createChart(prefix + 'Other', 'bar', { indexAxis: 'y' });
+    };
+
+    createUnitCharts('unitChart');
+    createUnitCharts('mUnitChart');
+    createUnitCharts('gUnitChart');
+
     charts.mVol = createChart('monthlyChart', 'line', {});
     charts.mSla = createChart('monthlySlaChart', 'doughnut', { cutout:'65%', plugins: { legend: outsideLabelsConfig } });
     charts.mUnits = createChart('monthlyUnitsChart', 'bar', { indexAxis:'y' });
     charts.mStatus = createChart('monthlyStatusChart', 'bar', {});
     charts.mType = createChart('monthlyTypeChart', 'pie', { plugins: { legend: outsideLabelsConfig } });
-    charts.mAss = createChart('monthlyAssigneeChart', 'bar', { 
-        scales:{ x:{stacked:true}, y:{stacked:true} }, 
-        plugins:{ legend:{ display:true, position:'bottom', labels:{ filter: (i)=>i.text!=='Total' } }, sideLabels: sideLabelsPlugin }, 
-        layout: { padding: { top: 30, right: 50, left: 10, bottom: 10 } } 
-    });
+    charts.mCat = createChart('monthlyCategoryChart', 'pie', { plugins: { legend: outsideLabelsConfig } });
+    charts.mReq = createChart('monthlyRequesterChart', 'bar', { indexAxis: 'y' });
+    
     updateChartTheme();
 }
+
+// --- 4. ARQUIVO E PARSER CORRIGIDO (BR FORMAT) ---
 
 function handleFileSelect(evt) { 
     const file = evt.target.files[0]; 
     if(!file) return; 
-    
-    if(file.lastModified) {
-        document.getElementById('currentDate').innerText = new Date(file.lastModified).toLocaleString('pt-BR');
-    } else {
-        document.getElementById('currentDate').innerText = new Date().toLocaleString('pt-BR');
-    }
-
+    document.getElementById('currentDate').innerText = file.lastModified ? new Date(file.lastModified).toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR');
     const r = new FileReader(); 
     r.onload = (e) => {
         const content = e.target.result;
-        // Salva no navegador para próximas sessões
-        try {
-            localStorage.setItem(STORAGE_KEY, content);
-            logMsg("Arquivo salvo no navegador! Ele será carregado automaticamente na próxima vez.");
-        } catch(err) {
-            console.warn("Não foi possível salvar no cache (arquivo muito grande):", err);
-            logMsg("Arquivo carregado (mas muito grande para salvar no cache).");
-        }
-        processCSV(content); 
+        try { localStorage.setItem(STORAGE_KEY, content); } catch(err) {}
+        logMsg("Lendo arquivo...");
+        setTimeout(() => processCSV(content), 100); 
     };
     r.readAsText(file); 
 }
 
 function loadAutoCSV() {
-    // 1. Tenta carregar do LocalStorage (Persistência)
     const savedData = localStorage.getItem(STORAGE_KEY);
-    
-    if (savedData) {
-        logMsg("Carregando dados salvos do navegador...");
-        processCSV(savedData, true);
-    } else {
-        // 2. Se não tiver, carrega o arquivo padrão
-        fetch('dados.csv').then(r=>{
-            if(!r.ok) throw new Error();
-            return r.text();
-        }).then(t=>{
-            logMsg("Dados padrão carregados."); 
-            processCSV(t, true);
-        }).catch(e=>logMsg("Modo Local. Use o botão Importar."));
+    if (savedData) { 
+        logMsg("Cache carregado."); 
+        setTimeout(() => processCSV(savedData, true), 500); 
+    } else { 
+        fetch('dados.csv').then(r=>{ 
+            if(!r.ok) throw new Error(); return r.text(); 
+        }).then(t=>{ 
+            logMsg("Dados padrão."); 
+            processCSV(t, true); 
+        }).catch(e=>logMsg("Use o botão Importar.")); 
     }
 }
 
-function clearLocalData() {
-    localStorage.removeItem(STORAGE_KEY);
-    logMsg("Dados salvos removidos! Recarregando página...", false);
-    setTimeout(() => location.reload(), 1000);
+function clearLocalData() { 
+    localStorage.removeItem(STORAGE_KEY); 
+    logMsg("Cache limpo!", false); 
+    setTimeout(() => location.reload(), 500); 
+}
+
+function parseCSV(text) {
+    const cleanText = text.replace(/^\uFEFF/, '');
+    const rows = []; let currentRow = []; let currentCell = ''; let insideQuotes = false;
+    const firstLineEnd = cleanText.indexOf('\n');
+    const firstLine = cleanText.substring(0, firstLineEnd > -1 ? firstLineEnd : cleanText.length);
+    const sep = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
+    
+    for (let i = 0; i < cleanText.length; i++) {
+        const char = cleanText[i]; const nextChar = cleanText[i + 1];
+        if (char === '"') { if (insideQuotes && nextChar === '"') { currentCell += '"'; i++; } else { insideQuotes = !insideQuotes; } } 
+        else if (char === sep && !insideQuotes) { currentRow.push(currentCell.trim()); currentCell = ''; } 
+        else if ((char === '\r' || char === '\n') && !insideQuotes) {
+            if (char === '\r' && nextChar === '\n') i++; 
+            if (currentCell || currentRow.length > 0) currentRow.push(currentCell.trim());
+            if (currentRow.length > 0) rows.push(currentRow);
+            currentRow = []; currentCell = '';
+        } else { currentCell += char; }
+    }
+    if (currentCell || currentRow.length > 0) { currentRow.push(currentCell.trim()); rows.push(currentRow); }
+    return { rows, sep };
 }
 
 function processCSV(text, isAuto=false) {
     if(!text) return;
-    const lines = text.split('\n').filter(l => l.trim().length > 0);
-    const sep = lines[0].includes(';') ? ';' : ',';
-    const headers = lines[0].split(sep).map(h => h.replace(/"/g,'').trim().toLowerCase());
+    const result = parseCSV(text); const rows = result.rows;
+    if(rows.length < 2) { logMsg("CSV Inválido.", true); return; }
     
+    const headers = rows[0].map(h => h.replace(/"/g,'').trim().toLowerCase());
     const map = { 
         created: headers.findIndex(h=>h.includes('criado')||h.includes('created')), 
         updated: headers.findIndex(h=>h.includes('atualizado')||h.includes('updated')), 
         deadline: headers.findIndex(h=>h.includes('limite')||h.includes('due')), 
         status: headers.findIndex(h=>h.includes('status')), 
-        assignee: headers.findIndex(h=>h.includes('responsável')||h.includes('assignee')), 
+        assignee: headers.findIndex(h=>h.includes('respons')||h.includes('assignee')), 
         type: headers.findIndex(h=>h.includes('tipo')||h.includes('type')), 
-        loc: headers.findIndex(h=>h.includes('campo')||h.includes('local')),
+        loc: headers.findIndex(h=>(h.includes('office')||h.includes('local')||h.includes('campo')) && !h.includes('categor')), 
         id: headers.findIndex(h=>h.includes('chave')||h.includes('issue id')||h.includes('key')||h.includes('número')),
-        summary: headers.findIndex(h=>h.includes('resumo')||h.includes('summary')||h.includes('título'))
+        summary: headers.findIndex(h=>h.includes('resumo')||h.includes('summary')),
+        reporter: headers.findIndex(h=>h.includes('relator')||h.includes('reporter')),
+        category: headers.findIndex(h=>h.includes('categoria')||h.includes('category')),
+        ccusto: headers.findIndex(h=>h.includes('ccusto')||h.includes('centro')), 
+        role: headers.findIndex(h=>h.includes('funcao')||h.includes('função'))
+    };
+    
+    if(map.created===-1 || map.status===-1){ logMsg(`Erro: Coluna 'Criado' ou 'Status' não achada.`, true); return; }
+    
+    const data = []; let maxDate = 0;
+    
+    // --- PARSER ESPECIAL PARA DD/MM/YY ---
+    const parseDt = (s) => { 
+        if(!s) return null; 
+        try {
+            // Remove aspas e pega a parte da data
+            let cleanS = s.replace(/"/g,'').trim();
+            // Tenta dividir por barra (formato BR)
+            let parts = cleanS.split(' ')[0].split('/');
+            
+            // Se não funcionou, tenta hífen
+            if (parts.length < 3) parts = cleanS.split(' ')[0].split('-');
+            
+            if (parts.length >= 3) {
+                let d = parseInt(parts[0], 10);
+                let m = parseInt(parts[1], 10);
+                let y = parseInt(parts[2], 10);
+                
+                // Correção de ano de 2 dígitos
+                if (y < 100) y += 2000;
+                
+                // Mês em JS é base 0 (Jan = 0)
+                const dt = new Date(y, m - 1, d);
+                
+                // Validação básica
+                if (!isNaN(dt.getTime())) return dt;
+            }
+            return null;
+        } catch(e) { return null; }
     };
 
-    if(map.created===-1||map.status===-1){logMsg("CSV Inválido (Colunas não encontradas)",true);return;}
-    const data = [];
-    let maxDate = 0;
-
-    for(let i=1; i<lines.length; i++) {
-        let row = sep === ';' ? lines[i].split(';') : lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-        if(row.length < headers.length) continue;
-        const clean = (x) => x ? x.replace(/"/g,'').trim() : 'N/A';
-        const parseDt = (s) => { if(!s)return null; let c=clean(s).split(' '); let dp=c[0],tp=c[1]||"00:00"; let d,m,y; if(dp.includes('/'))[d,m,y]=dp.split('/').map(Number); else if(dp.includes('-'))[y,m,d]=dp.split('-').map(Number); else return null; if(y<100)y+=2000; let [h,min]=tp.split(':').map(Number); if(c.includes('PM')&&h<12)h+=12; if(c.includes('AM')&&h===12)h=0; const dt=new Date(y,m-1,d,h,min); return isNaN(dt)?null:dt; };
+    for(let i=1; i<rows.length; i++) {
+        const row = rows[i]; if(row.length < 3) continue; 
+        const clean = (val) => val ? val.replace(/"/g,'').trim() : 'N/A';
         
-        const cDt = parseDt(row[map.created]);
+        const cDt = parseDt(row[map.created]); 
         const uDt = parseDt(row[map.updated]);
-        
-        if(isAuto && (cDt && cDt.getTime() > maxDate)) maxDate = cDt.getTime();
-        if(isAuto && (uDt && uDt.getTime() > maxDate)) maxDate = uDt.getTime();
+        const dDt = parseDt(row[map.deadline]);
 
+        if(isAuto && cDt && cDt.getTime() > maxDate) maxDate = cDt.getTime();
+        
+        let rawCCusto = (map.ccusto > -1 && row[map.ccusto]) ? clean(row[map.ccusto]) : 'N/A';
+        let rawRole = (map.role > -1 && row[map.role]) ? clean(row[map.role]) : 'N/A';
+
+        // Só adiciona se tiver Data de Criação válida
         if(cDt) {
             data.push({ 
-                created: cDt, updated: uDt, deadline: parseDt(row[map.deadline]), status: clean(row[map.status]), 
-                assignee: clean(row[map.assignee])||'N/A', type: clean(row[map.type]), 
+                created: cDt, 
+                updated: uDt, 
+                deadline: dDt, 
+                status: clean(row[map.status]), 
+                assignee: map.assignee > -1 ? (clean(row[map.assignee])||'N/A') : 'N/A', 
+                type: clean(row[map.type]), 
                 location: map.loc>-1?clean(row[map.loc]):'Geral',
                 id: map.id > -1 ? clean(row[map.id]) : `REQ-${i}`,
-                summary: map.summary > -1 ? clean(row[map.summary]) : 'Sem resumo'
+                summary: map.summary > -1 ? clean(row[map.summary]) : 'Sem resumo',
+                reporter: map.reporter > -1 ? clean(row[map.reporter]) : 'Desconhecido',
+                category: map.category > -1 ? clean(row[map.category]) : 'Outros',
+                ccusto: rawCCusto, 
+                role: rawRole
             });
         }
     }
 
+    if(data.length === 0) { logMsg("Nenhuma data válida encontrada.", true); return; }
     if(isAuto && maxDate > 0) document.getElementById('currentDate').innerText = new Date(maxDate).toLocaleString('pt-BR');
-    else if (isAuto && !localStorage.getItem(STORAGE_KEY)) document.getElementById('currentDate').innerText = new Date().toLocaleString('pt-BR');
-
-    allTickets = data; recalculateKPIs(data);
     
-    // Ajusta mensagem se foi carregado do cache ou não
-    if (localStorage.getItem(STORAGE_KEY)) {
-        logMsg(`Dados restaurados do cache (${data.length} registros).`);
-    } else {
-        logMsg(`Sucesso! ${data.length} registros carregados.`);
-    }
+    allTickets = data; 
+    recalculateKPIs(data);
+    
+    if(localStorage.getItem(STORAGE_KEY)) logMsg(`Carregado: ${data.length} registros.`); else logMsg(`Importado: ${data.length} registros.`);
 }
 
 function calculateBusinessTime(start, end) {
-    if (start >= end) return 0;
-    const startHour = 8; const endHour = 18;
-    let totalMs = 0;
-    let current = new Date(start);
-
+    if (!start || !end || start >= end) return 0;
+    const startHour = 8; const endHour = 18; let totalMs = 0; let current = new Date(start);
     while (current < end) {
         const day = current.getDay();
-        if (day === 0 || day === 6) {
-            current.setHours(0,0,0,0); current.setDate(current.getDate() + 1); continue;
-        }
-        const workStart = new Date(current); workStart.setHours(startHour, 0, 0, 0);
-        const workEnd = new Date(current); workEnd.setHours(endHour, 0, 0, 0);
-
-        if (current >= workEnd) {
-            current.setHours(0,0,0,0); current.setDate(current.getDate() + 1); continue;
-        }
+        if (day === 0 || day === 6) { current.setHours(0,0,0,0); current.setDate(current.getDate() + 1); continue; }
+        const workStart = new Date(current); workStart.setHours(startHour, 0, 0, 0); const workEnd = new Date(current); workEnd.setHours(endHour, 0, 0, 0);
+        if (current >= workEnd) { current.setHours(0,0,0,0); current.setDate(current.getDate() + 1); continue; }
         if (current < workStart) current = workStart;
-        
-        let effectiveEnd = new Date(Math.min(end, workEnd));
+        let effectiveEnd = new Date(Math.min(end.getTime(), workEnd.getTime()));
         if (effectiveEnd > current) totalMs += (effectiveEnd - current);
-        
         current.setDate(current.getDate() + 1); current.setHours(0, 0, 0, 0);
     }
     return totalMs;
 }
 
 function formatDuration(ms) { 
-    if(!ms||ms<0)return "-"; 
-    const hours = Math.floor(ms / 3600000);
-    const days = Math.floor(hours / 10); 
-    const remHours = hours % 10;
+    if(!ms||ms<0)return "-"; const hours = Math.floor(ms / 3600000); const days = Math.floor(hours / 10); const remHours = hours % 10;
     return days > 0 ? `${days}d ${remHours}h` : `${hours}h`; 
 }
 
-function recalculateKPIs(data) {
-    // KPI Geral (Histórico)
-    const s = {trend:{},loc:{},ass:{},type:{},status:{},slaOk:0,slaTot:0,durSum:0,durCount:0};
-    data.forEach(t => {
-        const k = `${String(t.created.getMonth()+1).padStart(2,'0')}/${t.created.getFullYear().toString().substr(2)}`;
-        s.trend[k]=(s.trend[k]||0)+1; s.loc[t.location]=(s.loc[t.location]||0)+1; s.ass[t.assignee]=(s.ass[t.assignee]||0)+1; s.type[t.type]=(s.type[t.type]||0)+1; s.status[t.status]=(s.status[t.status]||0)+1;
-        
-        const statusLower = t.status.toLowerCase();
-        const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(statusLower);
-        const isCanc = statusLower.includes('cancelado');
-
-        if(t.deadline && !isCanc) { 
-            s.slaTot++; 
-            if((isRes&&t.updated<=t.deadline)||(!isRes&&new Date()<=t.deadline)) s.slaOk++; 
-        }
-        
-        if(isRes && t.updated && !isCanc) { 
-            const d = calculateBusinessTime(t.created, t.updated); 
-            if(d>0){ s.durSum+=d; s.durCount++; } 
+function getTop10(data, key) {
+    const counts = {};
+    data.forEach(t => { 
+        if(t[key]) {
+            if ((key === 'reporter' || key === 'assignee') && isExcluded(t[key])) return;
+            counts[t[key]] = (counts[t[key]] || 0) + 1; 
         }
     });
+    return Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0, 10);
+}
+
+// --- 5. LÓGICA DE KPIS E GRÁFICOS ---
+
+function recalculateKPIs(data) {
+    const s = {trend:{},loc:{},ass:{},type:{},status:{},cat:{},rep:{},slaOk:0,slaTot:0,durSum:0,durCount:0};
     
+    // Reseta monthlyData para garantir limpeza
+    monthlyData={}; 
+
+    data.forEach(t => {
+        // Popula monthlyData ANTES de excluir, para garantir que as abas funcionem
+        // mesmo se o mês só tiver chamados de automação
+        if(t.created) {
+            const y = t.created.getFullYear().toString(); 
+            const m = (t.created.getMonth()+1).toString(); 
+            if(!monthlyData[y]) monthlyData[y]={}; 
+            if(!monthlyData[y][m]) monthlyData[y][m]=[]; 
+            monthlyData[y][m].push(t); 
+        }
+
+        if(isExcluded(t.reporter)) return; 
+
+        const k = `${String(t.created.getMonth()+1).padStart(2,'0')}/${t.created.getFullYear().toString().substr(2)}`;
+        s.trend[k]=(s.trend[k]||0)+1; s.loc[t.location]=(s.loc[t.location]||0)+1; s.type[t.type]=(s.type[t.type]||0)+1; s.status[t.status]=(s.status[t.status]||0)+1; s.cat[t.category]=(s.cat[t.category]||0)+1; s.rep[t.reporter]=(s.rep[t.reporter]||0)+1;
+        if(!isExcluded(t.assignee) && t.assignee !== 'N/A') s.ass[t.assignee]=(s.ass[t.assignee]||0)+1;
+        
+        const statusLower = t.status.toLowerCase();
+        const isRes = ['resolvido','fechada','concluído','concluido','done','fechado'].some(x => statusLower.includes(x));
+        const isCanc = statusLower.includes('cancelado');
+        if(t.deadline && !isCanc) { s.slaTot++; if((isRes&&t.updated<=t.deadline)||(!isRes&&new Date()<=t.deadline)) s.slaOk++; }
+        if(isRes && t.updated && !isCanc) { const d = calculateBusinessTime(t.created, t.updated); if(d>0){ s.durSum+=d; s.durCount++; } }
+    });
+    
+    // Atualiza KPIs do Header
     document.getElementById('kpiTotal').innerText = data.length; 
     const slaVal = s.slaTot ? ((s.slaOk/s.slaTot)*100) : 0;
     const elKpiSla = document.getElementById('kpiSLA');
     elKpiSla.innerText = s.slaTot ? slaVal.toFixed(1)+"%" : "-";
     elKpiSla.className = 'kpi-value ' + (slaVal >= 70 ? 'text-warning' : 'text-danger');
     if(slaVal >= 90) elKpiSla.className = 'kpi-value text-success';
-
     document.getElementById('kpiSMA').innerText = s.durCount?formatDuration(s.durSum/s.durCount):"-";
     const topL = Object.entries(s.loc).sort((a,b)=>b[1]-a[1])[0]; document.getElementById('kpiLocation').innerText = topL?topL[0]:"-";
     
-    const updateC = (k,l,d,p={}) => { charts[k].data.labels=l; charts[k].data.datasets=[{data:d,backgroundColor:p.bg||'#8680b1',borderColor:p.bd||'#8680b1',fill:p.fill||false}]; if(p.multi)charts[k].data.datasets[0].backgroundColor=p.bg; charts[k].update(); };
-    const tK = Object.keys(s.trend).sort((a,b)=>{const[m1,y1]=a.split('/');const[m2,y2]=b.split('/');return y1==y2?m1-m2:y1-y2;}); updateC('trend',tK,tK.map(k=>s.trend[k]),{bg:'rgba(134,128,177,0.2)',fill:true});
-    
+    // --- ATUALIZAÇÃO DOS GRÁFICOS (ABA GERAL) ---
+    const updateC = (k,l,d,p={}) => { 
+        if(!charts[k]) return; 
+        charts[k].data.labels=l; 
+        charts[k].data.datasets=[{
+            data:d,
+            backgroundColor:p.bg||'#8680b1',
+            borderColor:p.bd||'#8680b1',
+            fill:p.fill||false,
+            label: p.label || 'Volume'
+        }]; 
+        if(p.multi)charts[k].data.datasets[0].backgroundColor=p.bg; 
+        charts[k].update(); 
+    };
+
+    const tK = Object.keys(s.trend).sort((a,b)=>{const[m1,y1]=a.split('/');const[m2,y2]=b.split('/');return y1==y2?m1-m2:y1-y2;}); 
+    updateC('trend',tK,tK.map(k=>s.trend[k]),{bg:'rgba(134,128,177,0.2)',fill:true, label: 'Chamados por Mês'});
     const sL = Object.entries(s.loc).filter(x => x[0] !== 'N/A').sort((a,b)=>b[1]-a[1]); 
-    updateC('loc',sL.map(x=>x[0]),sL.map(x=>x[1]),{bg:'#0055FF'});
+    updateC('loc',sL.map(x=>x[0]),sL.map(x=>x[1]),{bg:'#0055FF', label: 'Chamados por Unidade'});
     
-    const sA = Object.entries(s.ass).filter(x => x[0] !== 'N/A' && !EXCLUDED_ANALYSTS.includes(x[0]) && x[1] >= 3).sort((a,b)=>b[1]-a[1]).slice(0,10); 
-    updateC('ass',sA.map(x=>x[0]),sA.map(x=>x[1]));
+    const topAss = Object.entries(s.ass).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    charts.ass.data.labels = topAss.map(x => x[0]);
+    charts.ass.data.datasets = [{ label: 'Volume de Chamados', data: topAss.map(x => x[1]), backgroundColor: '#0055FF', barThickness: 20 }];
+    charts.ass.update();
+
+    updateC('type',Object.keys(s.type),Object.values(s.type),{multi:true,bg:distinctColors, label: 'Tipos'}); 
     
-    updateC('type',Object.keys(s.type),Object.values(s.type),{multi:true,bg:distinctColors}); 
-    updateC('sla',['No Prazo','Fora'],[s.slaOk,s.slaTot-s.slaOk],{multi:true,bg:['#00C853','#FF5252']}); 
-    updateC('status',Object.keys(s.status),Object.values(s.status),{multi:true,bg:['#00C853','#455A64','#9E9E9E','#8680b1','#546E7A']});
+    const groupedCat = {}; let otherCatCount = 0;
+    Object.entries(s.cat).forEach(([k, v]) => { if (v < 30) otherCatCount += v; else groupedCat[k] = v; });
+    if (otherCatCount > 0) groupedCat['Demais Categorias'] = otherCatCount;
+    const catLabels = Object.keys(groupedCat).sort((a, b) => groupedCat[b] - groupedCat[a]);
+    const catData = catLabels.map(k => groupedCat[k]);
+    charts.cat.data.labels = catLabels;
+    charts.cat.data.datasets = [{ data: catData, backgroundColor: distinctColors, label: 'Categorias' }];
+    charts.cat.update();
+
+    updateC('sla',['No Prazo','Fora'],[s.slaOk,s.slaTot-s.slaOk],{multi:true,bg:['#00C853','#FF5252'], label: 'SLA'}); 
+    updateC('status',Object.keys(s.status),Object.values(s.status),{multi:true,bg:['#00C853','#455A64','#9E9E9E','#8680b1','#546E7A'], label: 'Status'});
     
-    monthlyData={}; data.forEach(t=>{ const y=t.created.getFullYear().toString(); const m=(t.created.getMonth()+1).toString(); if(!monthlyData[y])monthlyData[y]={}; if(!monthlyData[y][m])monthlyData[y][m]=[]; monthlyData[y][m].push(t); });
+    const sRepArr = Object.entries(s.rep).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    updateC('reqGlobal', sRepArr.map(x=>x[0]), sRepArr.map(x=>x[1]), {bg: '#00ACC1', label: 'Solicitações'});
     
-    initMonthlyTab();
+    const updateGeneralSpecialChart = (key, chartObj, obsId, color) => {
+        if (!chartObj) return;
+        const counts = {}; let notFoundCount = 0;
+        data.forEach(t => {
+            const val = t[key];
+            if (val === 'Não Encontrado' || val === 'N/A' || !val) { notFoundCount++; } 
+            else { if (isExcluded(t.reporter)) return; counts[val] = (counts[val] || 0) + 1; }
+        });
+        const obsEl = document.getElementById(obsId);
+        if (obsEl) {
+            if (notFoundCount > 0) {
+                const formattedCount = notFoundCount.toLocaleString('pt-BR');
+                obsEl.innerText = `Temos "${formattedCount}" da Automação do Jira ou de colaborador desligado`;
+                obsEl.style.display = 'block';
+            } else { obsEl.style.display = 'none'; }
+        }
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+        chartObj.data.labels = sorted.map(x => x[0]);
+        chartObj.data.datasets = [{ data: sorted.map(x => x[1]), backgroundColor: color, label: 'Chamados' }];
+        chartObj.update();
+    };
+
+    updateGeneralSpecialChart('ccusto', charts.gCCusto, 'obsCCusto', '#7B1FA2');
+    updateGeneralSpecialChart('role', charts.gRole, 'obsRole', '#E64A19');
+
+    updateUnitRequesterCharts(data, 'gUnitChart'); 
+    updateUnitRequesterCharts(data, 'unitChart');
+
+    // Inicializa a aba mensal com os dados populados
+    initMonthlyTab(); 
     updateChartTheme();
+}
+
+function updateStackedAnalystChart(chartObj, dataset) {
+    if(!chartObj) return;
+    const counts = {}; const locations = new Set(); const analysts = new Set();
+    dataset.forEach(t => { if (!t.assignee || isExcluded(t.assignee) || t.assignee === 'N/A') return; analysts.add(t.assignee); locations.add(t.location); if(!counts[t.assignee]) counts[t.assignee] = {}; counts[t.assignee][t.location] = (counts[t.assignee][t.location] || 0) + 1; });
+    const sortedAnalysts = Array.from(analysts).sort((a,b) => { const totalA = Object.values(counts[a]).reduce((sum,v)=>sum+v,0); const totalB = Object.values(counts[b]).reduce((sum,v)=>sum+v,0); return totalB - totalA; }).slice(0, 20);
+    const locArray = Array.from(locations).sort();
+    const datasets = locArray.map((loc, i) => ({ label: loc, data: sortedAnalysts.map(a => counts[a][loc] || 0), backgroundColor: distinctColors[i % distinctColors.length], stack: 'total', datalabels: { display: false } }));
+    const totals = sortedAnalysts.map(a => Object.values(counts[a]).reduce((s,v)=>s+v,0));
+    datasets.push({ label: 'Total', data: totals, type: 'line', backgroundColor: 'transparent', borderColor: 'transparent', pointRadius: 0, datalabels: { display: true, align: 'end', anchor: 'end', offset: -4, font: { weight: 'bold', family: "'Montserrat', sans-serif" } } });
+    chartObj.data.labels = sortedAnalysts; chartObj.data.datasets = datasets; chartObj.update();
+}
+
+function updateUnitRequesterCharts(data, chartPrefix) {
+    const unitsMap = { 'Extrema': chartPrefix + 'Extrema', 'Serra': chartPrefix + 'Serra', 'Embu DCR': chartPrefix + 'Embu', 'Vila Olímpia': chartPrefix + 'Vila', 'Duque de Caxias': chartPrefix + 'Duque' };
+    const stats = { 'Extrema': {}, 'Serra': {}, 'Embu DCR': {}, 'Vila Olímpia': {}, 'Duque de Caxias': {}, 'Outros': {} };
+    const norm = (str) => str ? str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
+    data.forEach(t => { 
+        if(isExcluded(t.reporter)) return; 
+        let bucket = 'Outros'; const locNorm = norm(t.location);
+        for(let u of Object.keys(unitsMap)) { const uNorm = norm(u); if(locNorm.includes(uNorm) || (u === 'Vila Olímpia' && locNorm.includes('vila'))) { bucket = u; break; } } 
+        if(!stats[bucket][t.reporter]) stats[bucket][t.reporter] = 0; stats[bucket][t.reporter]++; 
+    });
+    const updateChart = (key, unitData) => { 
+        if(!charts[key]) return; 
+        const top5 = Object.entries(unitData).sort((a,b)=>b[1]-a[1]).slice(0,5); 
+        charts[key].data.labels = top5.map(x=>x[0]); 
+        charts[key].data.datasets = [{ data: top5.map(x=>x[1]), backgroundColor: '#5E35B1', label: 'Chamados' }]; 
+        charts[key].update(); 
+    };
+    Object.keys(unitsMap).forEach(u => updateChart(unitsMap[u], stats[u])); 
+    updateChart(chartPrefix + 'Other', stats['Outros']);
 }
 
 function getMoM(current, previous) {
     if (!previous || previous === 0) return { val: "0%", class: "", icon: "-" };
-    const diff = ((current - previous) / previous) * 100;
-    const absDiff = Math.abs(diff).toFixed(1);
+    const diff = ((current - previous) / previous) * 100; const absDiff = Math.abs(diff).toFixed(1);
     if (diff > 0) return { val: `+${absDiff}%`, class: "text-success", icon: "▲" };
     if (diff < 0) return { val: `-${absDiff}%`, class: "text-danger", icon: "▼" };
     return { val: "0%", class: "text-muted", icon: "-" };
 }
 
-// Função de Insights
 function calculateTeamInsights(data) {
-    const grid = document.getElementById('team-insights-grid');
-    grid.innerHTML = "";
+    const grid = document.getElementById('team-insights-grid'); 
+    if(grid) grid.innerHTML = ""; else return; 
     
-    if(!data || data.length === 0) {
-        grid.innerHTML = "<p style='color:var(--text-muted); text-align:center; width:100%; grid-column:1/-1;'>Sem dados para este período.</p>";
-        return;
-    }
-
-    const stats = {};
-    let totalTeamTickets = 0;
-    
-    data.forEach(t => {
-        if (!t.assignee || EXCLUDED_ANALYSTS.includes(t.assignee)) return;
-        
-        if(!stats[t.assignee]) stats[t.assignee] = { count: 0, slaOk: 0, slaTot: 0 };
-        stats[t.assignee].count++;
-        totalTeamTickets++;
-        
-        if(t.deadline) {
-            stats[t.assignee].slaTot++;
-            if(t.updated <= t.deadline) stats[t.assignee].slaOk++;
-        }
+    if(!data || data.length === 0) { grid.innerHTML = "<p style='color:var(--text-muted); text-align:center; width:100%; grid-column:1/-1;'>Sem dados neste mês.</p>"; return; }
+    const stats = {}; let totalTeamTickets = 0;
+    data.forEach(t => { 
+        if (!t.assignee || isExcluded(t.assignee) || t.assignee === 'N/A') return; 
+        if(!stats[t.assignee]) stats[t.assignee] = { count: 0, slaOk: 0, slaTot: 0 }; 
+        stats[t.assignee].count++; totalTeamTickets++; 
+        if(t.deadline) { stats[t.assignee].slaTot++; if(t.updated <= t.deadline) stats[t.assignee].slaOk++; } 
     });
-
-    const activeAnalysts = Object.keys(stats).length;
-    const avgVol = activeAnalysts ? totalTeamTickets / activeAnalysts : 0;
-
+    const activeAnalysts = Object.keys(stats).length; const avgVol = activeAnalysts ? totalTeamTickets / activeAnalysts : 0;
     Object.entries(stats).sort((a,b) => b[1].count - a[1].count).forEach(([name, s]) => {
         const sla = s.slaTot ? (s.slaOk / s.slaTot) * 100 : 0;
-        
-        let profile = "Operacional";
-        let cardBorderColor = "var(--border-color)";
-        let icon = "👤";
-
-        if (sla >= 95) { profile = "Perfil Técnico (Qualidade)"; cardBorderColor = "var(--success)"; icon = "🛡️"; }
-        else if (s.count > avgVol * 1.2) { profile = "Perfil Agilidade (Volume)"; cardBorderColor = "var(--brand-blue)"; icon = "⚡"; }
-
-        let strongTxt = "Consistência nas entregas.";
-        let weakTxt = "Manter monitoramento padrão.";
-        let actionTxt = "Acompanhamento periódico.";
-
-        if(sla >= 95) strongTxt = "Alta confiabilidade e precisão técnica. Referência em qualidade.";
-        else if(s.count > avgVol) strongTxt = "Alta capacidade de vazão. Segura a demanda da equipe.";
-
-        if(sla < 85) { weakTxt = `SLA (${sla.toFixed(0)}%) abaixo da meta de 90%.`; actionTxt = "Priorizar tickets próximos ao vencimento."; }
-        else if(s.count < avgVol * 0.6) { weakTxt = "Volume de entregas abaixo da média."; actionTxt = "Puxar tickets do backlog proativamente."; }
-
-        const cardHTML = `
-            <div class="insight-card" style="border-left-color: ${cardBorderColor}">
-                <div class="ic-header-modern">
-                    <div class="ic-avatar">${icon}</div>
-                    <div class="ic-info"><h4>${name}</h4><span>${profile}</span></div>
-                </div>
-                <div class="ic-blocks-row">
-                    <div class="ic-block bg-success-light">
-                        <div class="ic-block-title text-success">✔ Ponto Forte</div>
-                        <div>${strongTxt}</div>
-                        <div style="margin-top:auto; font-weight:bold; font-size:0.75rem; color:var(--success)">SLA: ${sla.toFixed(0)}%</div>
-                    </div>
-                    <div class="ic-block ${sla < 85 ? 'bg-danger-light' : 'bg-warning-light'}">
-                        <div class="ic-block-title ${sla < 85 ? 'text-danger' : 'text-warning'}">⚠ Atenção</div>
-                        <div>${weakTxt}</div>
-                        <div style="margin-top:5px; padding-top:5px; border-top:1px solid rgba(0,0,0,0.1); font-size:0.75rem; font-style:italic;">
-                            👉 ${actionTxt}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-        grid.innerHTML += cardHTML;
+        let profile = "Operacional", cardBorderColor = "var(--border-color)", icon = "👤";
+        if (sla >= 95) { profile = "Perfil Técnico"; cardBorderColor = "var(--success)"; icon = "🛡️"; } else if (s.count > avgVol * 1.2) { profile = "Perfil Agilidade"; cardBorderColor = "var(--brand-blue)"; icon = "⚡"; }
+        let strongTxt = "Consistência.", weakTxt = "Monitorar.", actionTxt = "Acompanhar.";
+        if(sla >= 95) strongTxt = "Alta confiabilidade."; else if(s.count > avgVol) strongTxt = "Alta vazão.";
+        if(sla < 85) { weakTxt = `SLA (${sla.toFixed(0)}%) baixo.`; actionTxt = "Priorizar prazos."; } else if(s.count < avgVol * 0.6) { weakTxt = "Volume baixo."; actionTxt = "Puxar backlog."; }
+        grid.innerHTML += `<div class="insight-card" style="border-left-color: ${cardBorderColor}"><div class="ic-header-modern"><div class="ic-avatar">${icon}</div><div class="ic-info"><h4>${name}</h4><span>${profile}</span></div></div><div class="ic-blocks-row"><div class="ic-block bg-success-light"><div class="ic-block-title text-success">✔ Forte</div><div>${strongTxt}</div></div><div class="ic-block ${sla < 85 ? 'bg-danger-light' : 'bg-warning-light'}"><div class="ic-block-title ${sla < 85 ? 'text-danger' : 'text-warning'}">⚠ Atenção</div><div>${weakTxt}</div></div></div></div>`;
     });
 }
 
@@ -384,456 +538,453 @@ const yearSelect = document.getElementById('yearSelect'), monthSelect = document
 function initMonthlyTab() { yearSelect.innerHTML=""; const ys=Object.keys(monthlyData).sort(); if(!ys.length)return; ys.forEach(y=>yearSelect.add(new Option(y,y))); yearSelect.value=ys[ys.length-1]; updateMonthSelect(); }
 function updateMonthSelect() { monthSelect.innerHTML=""; const y=yearSelect.value; if(!monthlyData[y])return; const ms=Object.keys(monthlyData[y]).sort((a,b)=>a-b); ms.forEach(m=>monthSelect.add(new Option(mNames[m],m))); monthSelect.value=ms[ms.length-1]; updateMonthlyView(); }
 
-// --- ATUALIZAÇÃO DA VISÃO MENSAL ---
 function updateMonthlyView() {
-    const y = yearSelect.value;
-    const m = monthSelect.value;
-    if(!y || !m) return;
-
+    const y = yearSelect.value, m = monthSelect.value; if(!y || !m) return;
     const createdInMonth = (monthlyData[y] && monthlyData[y][m]) ? monthlyData[y][m] : [];
     
-    const resolvedInMonth = allTickets.filter(t => {
-        if (!t.updated) return false;
-        const statusLower = t.status.toLowerCase();
-        const isRes = ['resolvido', 'fechada', 'concluído', 'done', 'fechado'].includes(statusLower);
-        const isCanc = statusLower.includes('cancelado');
-        if (!isRes || isCanc) return false;
-        return t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
+    const resolvedInMonth = allTickets.filter(t => { 
+        if (!t.updated) return false; 
+        if (isExcluded(t.assignee) && t.assignee !== 'N/A') return false; 
+        const statusLower = t.status.toLowerCase(); 
+        const isRes = ['resolvido','fechada','concluído','concluido','done','fechado'].some(x => statusLower.includes(x)); 
+        return isRes && !statusLower.includes('cancelado') && t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m; 
     });
-
-    let prevY = parseInt(y);
-    let prevM = parseInt(m) - 1;
-    if (prevM === 0) { prevM = 12; prevY--; }
     
-    const ticketsPrevMonth = allTickets.filter(t => {
-        if (!t.updated) return false;
-        const statusLower = t.status.toLowerCase();
-        const isRes = ['resolvido', 'fechada', 'concluído', 'done', 'fechado'].includes(statusLower);
-        const isCanc = statusLower.includes('cancelado');
-        if (!isRes || isCanc) return false;
-        return t.updated.getFullYear() === prevY && (t.updated.getMonth() + 1) === prevM;
-    });
+    let prevY = parseInt(y), prevM = parseInt(m) - 1; if (prevM === 0) { prevM = 12; prevY--; }
+    const ticketsPrevMonth = allTickets.filter(t => { if (!t.updated) return false; const statusLower = t.status.toLowerCase(); const isRes = ['resolvido','fechada','concluído','done','fechado'].some(x => statusLower.includes(x)); return isRes && !statusLower.includes('cancelado') && t.updated.getFullYear() === prevY && (t.updated.getMonth() + 1) === prevM; });
 
     calculateTeamInsights(resolvedInMonth);
+    const calcMetrics = (tickets) => { let slaOk = 0, slaTot = 0, durSum = 0, durCount = 0; tickets.forEach(t => { if (t.deadline) { slaTot++; if (t.updated <= t.deadline) slaOk++; } const dur = calculateBusinessTime(t.created, t.updated); if (dur > 0) { durSum += dur; durCount++; } }); return { count: tickets.length, sla: slaTot ? (slaOk/slaTot)*100 : 0, tma: durCount ? durSum/durCount : 0 }; };
+    const cur = calcMetrics(resolvedInMonth); const prev = calcMetrics(ticketsPrevMonth);
+    const momVol = getMoM(cur.count, prev.count); const momSLA = getMoM(cur.sla, prev.sla); const momTMA = getMoM(cur.tma, prev.tma); momTMA.class = cur.tma > prev.tma ? "text-danger" : "text-success"; if(cur.tma > prev.tma) momTMA.icon = "▲"; else if(cur.tma < prev.tma) momTMA.icon = "▼";
 
-    const calcMetrics = (tickets) => {
-        let slaOk = 0, slaTot = 0, durSum = 0, durCount = 0;
-        tickets.forEach(t => {
-            if (t.deadline) { slaTot++; if (t.updated <= t.deadline) slaOk++; }
-            const dur = calculateBusinessTime(t.created, t.updated);
-            if (dur > 0) { durSum += dur; durCount++; }
-        });
-        return { count: tickets.length, sla: slaTot ? (slaOk/slaTot)*100 : 0, tma: durCount ? durSum/durCount : 0 };
-    };
+    const renderKPICard = (id, title, value, momData, isSLA=false) => { const el = document.getElementById(id); if(!el) return; const card = el.closest('.kpi-card'); let statusColor = "text-normal", statusIcon = "", badgeClass = "bg-success-light", badgeText = "Atualizado"; if(isSLA) { if(parseFloat(value) >= 90) { statusColor = "text-success"; statusIcon = "✔"; badgeText = "Meta OK"; } else if(parseFloat(value) < 70) { statusColor = "text-danger"; statusIcon = "⚠"; badgeClass = "bg-danger-light"; badgeText = "Crítico"; } else { statusColor = "text-warning"; statusIcon = "!"; badgeClass = "bg-warning-light"; badgeText = "Atenção"; } } card.innerHTML = `<div class="kpi-header-row"><span class="kpi-title">${title}</span><span class="kpi-icon-status ${statusColor}">${statusIcon}</span></div><div class="kpi-value ${statusColor}" id="${id}">${value}</div><div class="kpi-badge ${badgeClass}">${badgeText}</div><div class="kpi-mom"><span class="${momData.class}" style="font-weight:bold;">${momData.icon} ${momData.val}</span> vs mês anterior</div>`; };
+    renderKPICard('monthlyTotal', "Entregas no Mês", cur.count, momVol); renderKPICard('monthlySLA', "SLA do Mês", cur.sla.toFixed(1) + "%", momSLA, true);
+    if(document.getElementById('monthlySMA')) document.getElementById('monthlySMA').closest('.kpi-card').innerHTML = `<div class="kpi-header-row"><span class="kpi-title">TMA do Mês</span><span style="font-size:1.4rem;">⏱</span></div><div class="kpi-value text-normal" id="monthlySMA">${formatDuration(cur.tma)}</div><div class="kpi-badge bg-info-light">Tempo Médio</div><div class="kpi-mom"><span class="${momTMA.class}" style="font-weight:bold;">${momTMA.icon} ${momTMA.val}</span> vs mês anterior</div>`;
 
-    const cur = calcMetrics(resolvedInMonth);
-    const prev = calcMetrics(ticketsPrevMonth);
-
-    const renderKPICard = (id, title, value, metaText, momData, isSLA = false) => {
-        const el = document.getElementById(id);
-        if(!el) return;
-        const card = el.closest('.kpi-card');
-        
-        let statusColor = "text-normal", statusIcon = "", badgeClass = "bg-warning-light", badgeText = "Em Análise";
-
-        if(isSLA) {
-            if(parseFloat(value) >= 90) { statusColor = "text-success"; statusIcon = "✔"; badgeClass = "bg-success-light"; badgeText = "Meta Atingida"; } 
-            else if(parseFloat(value) < 70) { statusColor = "text-danger"; statusIcon = "⚠"; badgeClass = "bg-danger-light"; badgeText = "Crítico"; } 
-            else { statusColor = "text-warning"; statusIcon = "!"; badgeClass = "bg-warning-light"; badgeText = "Atenção"; }
-        } else {
-            badgeClass = "bg-success-light"; badgeText = "Atualizado";
-        }
-
-        card.innerHTML = `
-            <div class="kpi-header-row"><span class="kpi-title">${title}</span><span class="kpi-icon-status ${statusColor}">${statusIcon}</span></div>
-            <div class="kpi-value ${statusColor}" id="${id}">${value}</div>
-            <div class="kpi-badge ${badgeClass}">${badgeText}</div>
-            <div class="kpi-mom"><span class="${momData.class}" style="font-weight:bold;">${momData.icon} ${momData.val}</span> vs mês anterior</div>
-        `;
-    };
-
-    const momVol = getMoM(cur.count, prev.count);
-    const momSLA = getMoM(cur.sla, prev.sla);
-    const momTMA = getMoM(cur.tma, prev.tma);
-    momTMA.class = cur.tma > prev.tma ? "text-danger" : "text-success"; 
-    if(cur.tma > prev.tma) momTMA.icon = "▲"; else if(cur.tma < prev.tma) momTMA.icon = "▼";
-
-    renderKPICard('monthlyTotal', "Entregas no Mês", cur.count, "", momVol);
-    renderKPICard('monthlySLA', "SLA do Mês", cur.sla.toFixed(1) + "%", "Meta: ≥ 90%", momSLA, true);
-    
-    const elSMA = document.getElementById('monthlySMA');
-    if(elSMA) {
-        const cardSMA = elSMA.closest('.kpi-card');
-        cardSMA.innerHTML = `
-            <div class="kpi-header-row"><span class="kpi-title">TMA do Mês</span><span style="font-size:1.4rem;">⏱</span></div>
-            <div class="kpi-value text-normal" id="monthlySMA">${formatDuration(cur.tma)}</div>
-            <div class="kpi-badge bg-info-light" style="background:#e3f2fd; color:#1565c0">Tempo Médio</div>
-            <div class="kpi-mom"><span class="${momTMA.class}" style="font-weight:bold;">${momTMA.icon} ${momTMA.val}</span> vs mês anterior</div>
-        `;
-    }
-
-    const sVol = {}; 
-    if(createdInMonth.length > 0) {
-        createdInMonth.forEach(t => { const d = t.created.getDate(); sVol[d] = (sVol[d] || 0) + 1; });
-    }
-    const dK = Object.keys(sVol).sort((a, b) => a - b);
-    
-    charts.mVol.data.labels = dK.length ? dK : ['Sem dados'];
-    charts.mVol.data.datasets = [{ 
-        data: dK.length ? dK.map(k => sVol[k]) : [0], 
-        borderColor: '#8680b1', backgroundColor: 'rgba(134,128,177,0.2)', fill: true, label: 'Abertos' 
-    }];
-    charts.mVol.update();
-
-    let realSlaOk = 0; resolvedInMonth.forEach(t => { if(t.deadline && t.updated <= t.deadline) realSlaOk++; });
-    let realSlaTot = resolvedInMonth.filter(t=>t.deadline).length;
-    charts.mSla.data.labels = ['No Prazo', 'Fora'];
-    charts.mSla.data.datasets = [{ data: [realSlaOk, realSlaTot - realSlaOk], backgroundColor: ['#00C853', '#FF5252'] }];
-    charts.mSla.update();
-
+    const sVol = {}; if(createdInMonth.length > 0) createdInMonth.forEach(t => { const d = t.created.getDate(); sVol[d] = (sVol[d] || 0) + 1; }); const dK = Object.keys(sVol).sort((a, b) => a - b);
+    if(charts.mVol) { charts.mVol.data.labels = dK.length ? dK : ['Sem dados']; charts.mVol.data.datasets = [{ data: dK.length ? dK.map(k => sVol[k]) : [0], borderColor: '#8680b1', backgroundColor: 'rgba(134,128,177,0.2)', fill: true, label: 'Abertos' }]; charts.mVol.update(); }
+    let realSlaOk = 0; resolvedInMonth.forEach(t => { if(t.deadline && t.updated <= t.deadline) realSlaOk++; }); let realSlaTot = resolvedInMonth.filter(t=>t.deadline).length;
+    if(charts.mSla) { charts.mSla.data.labels = ['No Prazo', 'Fora']; charts.mSla.data.datasets = [{ data: [realSlaOk, realSlaTot - realSlaOk], backgroundColor: ['#00C853', '#FF5252'], label: 'Chamados' }]; charts.mSla.update(); }
     const sStatus = {}; createdInMonth.forEach(t => { sStatus[t.status] = (sStatus[t.status] || 0) + 1; });
-    charts.mStatus.data.labels = Object.keys(sStatus);
-    charts.mStatus.data.datasets = [{ data: Object.values(sStatus), backgroundColor: ['#00C853', '#8680b1', '#FF5252', '#0055FF'] }];
-    charts.mStatus.update();
-
+    if(charts.mStatus) { charts.mStatus.data.labels = Object.keys(sStatus); charts.mStatus.data.datasets = [{ data: Object.values(sStatus), backgroundColor: ['#00C853', '#8680b1', '#FF5252', '#0055FF'], label: 'Chamados' }]; charts.mStatus.update(); }
     const sType = {}; createdInMonth.forEach(t => { sType[t.type] = (sType[t.type] || 0) + 1; });
-    charts.mType.data.labels = Object.keys(sType);
-    charts.mType.data.datasets = [{ data: Object.values(sType), backgroundColor: distinctColors }];
-    charts.mType.update();
+    if(charts.mType) { charts.mType.data.labels = Object.keys(sType); charts.mType.data.datasets = [{ data: Object.values(sType), backgroundColor: distinctColors, label: 'Tipos' }]; charts.mType.update(); }
+    
+    // Categorias agrupadas (MENSAL)
+    const sCat = {}; createdInMonth.forEach(t => { sCat[t.category] = (sCat[t.category] || 0) + 1; });
+    const groupedCat = {}; let lowVol = 0;
+    Object.entries(sCat).forEach(([k, v]) => { if(v < 5) lowVol += v; else groupedCat[k] = v; });
+    if(lowVol > 0) groupedCat['Categorias de baixo volume'] = lowVol;
+    const catKeys = Object.keys(groupedCat).sort((a,b) => groupedCat[b] - groupedCat[a]);
+    if(charts.mCat) { charts.mCat.data.labels = catKeys; charts.mCat.data.datasets = [{ data: catKeys.map(k => groupedCat[k]), backgroundColor: distinctColors, label: 'Categorias' }]; charts.mCat.update(); }
+    
+    const sRep = {}; createdInMonth.forEach(t => { if(!isExcluded(t.reporter)) sRep[t.reporter] = (sRep[t.reporter]||0)+1; }); const topRep = Object.entries(sRep).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    if(charts.mReq) { charts.mReq.data.labels = topRep.map(x=>x[0]); charts.mReq.data.datasets = [{ data: topRep.map(x=>x[1]), backgroundColor: '#00ACC1', label:'Chamados' }]; charts.mReq.update(); }
 
     const det = { ass: {}, unit: {} };
-    resolvedInMonth.forEach(t => {
-        const addD = (o, k) => {
-            if (!o[k]) o[k] = { count: 0, slaOk: 0, slaTot: 0, durSum: 0, durCount: 0 };
-            o[k].count++;
-            if (t.deadline) { o[k].slaTot++; if (t.updated <= t.deadline) o[k].slaOk++; }
-            const d = calculateBusinessTime(t.created, t.updated);
-            if (d > 0) { o[k].durSum += d; o[k].durCount++; }
-        };
-        addD(det.ass, t.assignee); addD(det.unit, t.location);
-    });
-
-    const renderTable = (id, dataObj, type) => {
-        const tbody = document.querySelector(`#${id} tbody`);
-        if(!tbody) return;
-        tbody.innerHTML = "";
-        Object.entries(dataObj).filter(([k]) => k !== 'N/A').sort((a, b) => b[1].count - a[1].count).forEach(([k, v]) => {
-            const p = v.slaTot ? ((v.slaOk / v.slaTot) * 100).toFixed(1) : 0;
-            const c = p >= 90 ? 'pill-success' : (p >= 70 ? 'pill-warning' : 'pill-danger');
-            tbody.innerHTML += `
-                <tr>
-                    <td><strong>${k}</strong></td>
-                    <td>${v.count}</td>
-                    <td class="clickable-cell" onclick="handleMetricClick('${k}', 'sla', '${type}')"><span class="status-pill ${c}">${p}%</span></td>
-                    <td class="clickable-cell" onclick="handleMetricClick('${k}', 'tma', '${type}')">${formatDuration(v.durCount ? v.durSum/v.durCount : 0)}</td>
-                </tr>`;
-        });
-    };
-    renderTable('tableAssignee', det.ass, 'assignee');
-    renderTable('tableUnit', det.unit, 'unit');
-
+    resolvedInMonth.forEach(t => { const addD = (o, k) => { if (!o[k]) o[k] = { count: 0, slaOk: 0, slaTot: 0, durSum: 0, durCount: 0 }; o[k].count++; if (t.deadline) { o[k].slaTot++; if (t.updated <= t.deadline) o[k].slaOk++; } const d = calculateBusinessTime(t.created, t.updated); if (d > 0) { o[k].durSum += d; o[k].durCount++; } }; if(t.assignee !== 'N/A') addD(det.ass, t.assignee); addD(det.unit, t.location); });
+    const renderTable = (id, dataObj, type) => { const tbody = document.querySelector(`#${id} tbody`); if(!tbody) return; tbody.innerHTML = ""; Object.entries(dataObj).filter(([k]) => k !== 'N/A').sort((a, b) => b[1].count - a[1].count).forEach(([k, v]) => { const p = v.slaTot ? ((v.slaOk / v.slaTot) * 100).toFixed(1) : 0; const c = p >= 90 ? 'pill-success' : (p >= 70 ? 'pill-warning' : 'pill-danger'); tbody.innerHTML += `<tr><td><strong>${k}</strong></td><td>${v.count}</td><td class="clickable-cell" onclick="handleMetricClick('${k}', 'sla', '${type}')"><span class="status-pill ${c}">${p}%</span></td><td class="clickable-cell" onclick="handleMetricClick('${k}', 'tma', '${type}')">${formatDuration(v.durCount ? v.durSum/v.durCount : 0)}</td></tr>`; }); };
+    renderTable('tableAssignee', det.ass, 'assignee'); renderTable('tableUnit', det.unit, 'unit');
     const uS = Object.entries(det.unit).filter(x => x[0] !== 'N/A').sort((a, b) => b[1].count - a[1].count).slice(0, 5);
-    charts.mUnits.data.labels = uS.map(x => x[0]);
-    charts.mUnits.data.datasets = [{ data: uS.map(x => x[1].count), backgroundColor: '#0055FF' }];
-    charts.mUnits.update();
-    
-    const topA = Object.entries(det.ass).filter(([k]) => k !== 'N/A').sort((a, b) => b[1].count - a[1].count).map(x => x[0]).slice(0,10);
-    const matrixData = {};
-    resolvedInMonth.forEach(t => {
-        if(topA.includes(t.assignee)) {
-            if(!matrixData[t.assignee]) matrixData[t.assignee] = {};
-            matrixData[t.assignee][t.location] = (matrixData[t.assignee][t.location] || 0) + 1;
-        }
-    });
-    let allU = new Set(); topA.forEach(a => Object.keys(matrixData[a] || {}).forEach(u => allU.add(u)));
-    const unitDS = Array.from(allU).map((u, i) => ({
-        label: u, type: 'bar', stack: 'combined', backgroundColor: distinctColors[i % distinctColors.length],
-        data: topA.map(a => matrixData[a][u] || 0), datalabels: { display: false }
-    }));
-    charts.mAss.data.labels = topA;
-    charts.mAss.data.datasets = [...unitDS, {
-        label: 'Total', type: 'line', data: topA.map(a => det.ass[a].count),
-        backgroundColor: 'transparent', borderColor: 'transparent', pointRadius: 0,
-        datalabels: { display: true, align: 'end', anchor: 'end', offset: -5, color: document.body.classList.contains('light-mode') ? '#000000' : '#FFFFFF', font: { weight: 'bold', size: 12 }, formatter: (v) => v }
-    }];
-    charts.mAss.update();
+    if(charts.mUnits) { charts.mUnits.data.labels = uS.map(x => x[0]); charts.mUnits.data.datasets = [{ data: uS.map(x => x[1].count), backgroundColor: '#0055FF', label: 'Chamados' }]; charts.mUnits.update(); }
+    updateStackedAnalystChart(charts.mAss, resolvedInMonth);
+    updateUnitRequesterCharts(createdInMonth, 'mUnitChart');
+
+    const topCC = getTop10(createdInMonth, 'ccusto');
+    charts.mCCusto.data.labels = topCC.map(x => x[0]); charts.mCCusto.data.datasets = [{ data: topCC.map(x => x[1]), backgroundColor: '#7B1FA2', label: 'Chamados' }]; charts.mCCusto.update();
+    const topRole = getTop10(createdInMonth, 'role');
+    charts.mRole.data.labels = topRole.map(x => x[0]); charts.mRole.data.datasets = [{ data: topRole.map(x => x[1]), backgroundColor: '#E64A19', label: 'Chamados' }]; charts.mRole.update();
 }
 
-function handleMetricClick(entityName, metricType, entityType) {
-    const y = yearSelect.value;
-    const m = monthSelect.value;
-    
-    let tickets = allTickets.filter(t => {
-        const statusLower = t.status.toLowerCase();
-        const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(statusLower);
-        const isCanc = statusLower.includes('cancelado');
-        return isRes && !isCanc && t.updated && t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
-    });
-
-    if (entityType === 'assignee') tickets = tickets.filter(t => t.assignee === entityName);
-    else tickets = tickets.filter(t => t.location === entityName);
-
-    let title = "";
-    if (metricType === 'sla') {
-        title = `Chamados fora do Prazo - ${entityName}`;
-        tickets = tickets.filter(t => { if(!t.deadline) return false; return t.updated > t.deadline; });
-    } else if (metricType === 'tma') {
-        title = `Chamados com TMA Alto - ${entityName}`;
-        const totalDur = tickets.reduce((acc, t) => acc + calculateBusinessTime(t.created, t.updated), 0);
-        const avgDur = tickets.length ? totalDur / tickets.length : 0;
-        tickets = tickets.filter(t => calculateBusinessTime(t.created, t.updated) > avgDur);
-    }
-    openDrillDown(tickets, title, true);
-}
-
-let currentDrillDownData = [];
-let currentDrillDownPage = 1;
-const PAGE_SIZE = 50;
-let showCorrectionMode = false;
-
-function openDrillDown(tickets, title = "Detalhes", showCorrection = false) {
-    currentDrillDownData = tickets;
-    currentDrillDownPage = 1;
-    showCorrectionMode = showCorrection;
-    const titleEl = document.getElementById('ddTitle');
-    if(title) titleEl.innerText = title;
-    renderDrillDownPage();
-    document.getElementById('drillDownModal').classList.add('open');
-}
-
-// --- CORREÇÃO: DRILL DOWN COM STATUS DINÂMICO DE SLA ---
-function renderDrillDownPage() {
-    const tbody = document.querySelector('#ddTable tbody');
-    tbody.innerHTML = "";
-
-    if (currentDrillDownData.length === 0) {
-        tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; padding:20px;'>Nenhum registro encontrado.</td></tr>";
-        document.getElementById('pageInfo').innerText = "0 registros";
-        return;
-    }
-
-    const totalRecords = currentDrillDownData.length;
-    const totalPages = Math.ceil(totalRecords / PAGE_SIZE);
-    if (currentDrillDownPage < 1) currentDrillDownPage = 1;
-    if (currentDrillDownPage > totalPages) currentDrillDownPage = totalPages;
-
-    const startIdx = (currentDrillDownPage - 1) * PAGE_SIZE;
-    const endIdx = Math.min(startIdx + PAGE_SIZE, totalRecords);
-    const pageData = currentDrillDownData.slice(startIdx, endIdx);
-
-    let rowsHTML = "";
-    
-    // Helper para pílulas de Status
-    const getStatusPill = (status) => {
-        const s = status.toLowerCase();
-        let cls = 'pill-neutral';
-        if(['resolvido','fechada','concluído','done','fechado'].includes(s)) cls = 'pill-success';
-        else if(['em andamento','in progress','analisando'].includes(s)) cls = 'pill-info';
-        else if(['aguardando','waiting','pendente'].includes(s)) cls = 'pill-warning';
-        else if(s.includes('cancel')) cls = 'pill-danger';
-        return `<span class="status-pill ${cls}">${status}</span>`;
-    };
-
-    // Helper Dinâmico para SLA com TOOLTIP
-    const getSlaPill = (t) => {
-        if (!t.deadline) return '<span class="status-pill pill-neutral">-</span>';
-        
-        const statusLower = t.status.toLowerCase();
-        const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(statusLower);
-        
-        let isOk = false;
-        let tooltip = "";
-        
-        // Formata data simples
-        const fmt = (d) => d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
-
-        if (isRes) {
-            isOk = t.updated <= t.deadline;
-            if(isOk) {
-                tooltip = `Entregue em: ${fmt(t.updated)} (Prazo: ${fmt(t.deadline)})`;
-            } else {
-                const diffTime = Math.abs(t.updated - t.deadline);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                tooltip = `Atrasado! Entregue em ${fmt(t.updated)}. Estourou o prazo em aprox. ${diffDays} dia(s).`;
-            }
-        } else {
-            isOk = new Date() <= t.deadline;
-            if(isOk) {
-                tooltip = `Em aberto. Vence em: ${fmt(t.deadline)}`;
-            } else {
-                const diffTime = Math.abs(new Date() - t.deadline);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                tooltip = `Vencido há aprox. ${diffDays} dia(s). Prazo era: ${fmt(t.deadline)}`;
-            }
-        }
-
-        if (isOk) return `<span class="status-pill pill-success" title="${tooltip}">No Prazo</span>`;
-        return `<span class="status-pill pill-danger" title="${tooltip}">Atrasado</span>`;
-    };
-
-    pageData.forEach(t => {
-        const slaContent = getSlaPill(t);
-        let rowContent = `
-            <td style="font-weight:bold; color:var(--brand-blue);">${t.id || '-'}</td>
-            <td>${t.summary || '-'}</td>
-            <td>${getStatusPill(t.status)}</td>
-            <td>${t.assignee}</td>
-            <td>${slaContent}</td>
-        `;
-        rowsHTML += `<tr>${rowContent}</tr>`;
-    });
-
-    tbody.innerHTML = rowsHTML;
-    document.getElementById('pageInfo').innerText = `Página ${currentDrillDownPage} de ${totalPages} (${totalRecords} registros)`;
-    document.getElementById('btnPrev').disabled = (currentDrillDownPage === 1);
-    document.getElementById('btnNext').disabled = (currentDrillDownPage === totalPages);
-    document.querySelector('.fs-table-container').scrollTop = 0;
-}
-
-function changeDrillDownPage(direction) { currentDrillDownPage += direction; renderDrillDownPage(); }
-function closeDrillDown() { document.getElementById('drillDownModal').classList.remove('open'); }
-function toggleTheme() { document.body.classList.toggle('light-mode'); updateChartTheme(); }
-
-function updateChartTheme() {
-    const isL = document.body.classList.contains('light-mode'); 
-    document.getElementById('themeIcon').innerText = isL?'🌙':'☀️'; 
-    const c = isL ? '#000000' : '#FFFFFF'; 
-    const g = isL ? '#E0E0E0' : '#2C2C2C'; 
-    Chart.defaults.color = c; 
-    Chart.defaults.borderColor = g; 
-    if(Chart.defaults.plugins.datalabels) Chart.defaults.plugins.datalabels.color = c; 
-    Object.values(charts).forEach(ch => { 
-        if(ch.config.type === 'pie' || ch.config.type === 'doughnut') { if(ch.options.plugins.legend && ch.options.plugins.legend.labels) ch.options.plugins.legend.labels.color = c; }
-        if(ch!==charts.mAss) ch.update(); 
-    }); 
-    if(charts.mAss) { 
-        charts.mAss.options.plugins.legend.labels.color = c;
-        if(charts.mAss.options.scales.x) charts.mAss.options.scales.x.grid.color = g;
-        if(charts.mAss.options.scales.y) charts.mAss.options.scales.y.grid.color = g;
-        if(charts.mAss.data.datasets.length > 0) { const lastDS = charts.mAss.data.datasets[charts.mAss.data.datasets.length-1]; if(lastDS.label === 'Total') lastDS.datalabels.color = c; }
-        charts.mAss.update(); 
-    } 
-}
-
-function openTab(evt, n) { document.querySelectorAll('.tab-content, .tab-button').forEach(x=>x.classList.remove('active')); document.getElementById(n).classList.add('active'); evt.currentTarget.classList.add('active'); }
-function downloadCSV() { if(!allTickets.length){alert("Vazio");return;} const h=["Criado,Status,Responsável,Tipo,Local"]; const r=allTickets.map(t=>[`${t.created.toLocaleDateString()}`,t.status,t.assignee,t.type,t.location].join(',')); const b=new Blob([h.concat(r).join('\n')],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download="export.csv"; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
-
-// --- MAPA DE TELA CHEIA (ATUALIZADO) ---
-let fsIdx=0, fsChart=null;
-// Mapeamento expandido para incluir gráficos de outras abas
-const fsTitles = [
-    "Volume Diário", "SLA Mensal", "Status do Mês", "Tipos", "Top Unidades", "Analistas x Unidade", "Performance Analista", "Performance Unidade",
-    "Evolução de Chamados", // 8
-    "Demandas por Unidade", // 9
-    "Top Analistas", // 10
-    "Tipos de Solicitação", // 11
-    "Cumprimento de Prazos", // 12
-    "Distribuição por Status" // 13
-];
-
-function openFullscreenMode(i) { fsIdx=i; document.getElementById('fsModal').classList.add('open'); renderFs(); }
-function closeFullscreenMode() { document.getElementById('fsModal').classList.remove('open'); }
-function changeFullscreenChart(d) { fsIdx+=d; if(fsIdx<0)fsIdx=0; if(fsIdx>13)fsIdx=13; renderFs(); }
-
-function renderFs() {
-    document.getElementById('fsChartTitle').innerText = fsTitles[fsIdx] || "Detalhe";
-    document.getElementById('fsFooterMsg').classList.toggle('visible', fsIdx===13);
-    const cvsWrap = document.getElementById('fsCanvasWrapper'); const tblWrap = document.getElementById('fsTableWrapper');
-    
-    // Gráficos (0-5) e (8-13)
-    if(fsIdx < 6 || fsIdx > 7) {
-        cvsWrap.style.display = 'block'; tblWrap.classList.remove('active');
-        
-        let targetChart;
-        if (fsIdx < 6) targetChart = [charts.mVol, charts.mSla, charts.mStatus, charts.mType, charts.mUnits, charts.mAss][fsIdx];
-        else targetChart = [charts.trend, charts.loc, charts.ass, charts.type, charts.sla, charts.status][fsIdx - 8];
-
-        const ctx = document.getElementById('fsCanvas'); if(fsChart) fsChart.destroy();
-        const showLegend = ![0, 2, 4, 8, 9].includes(fsIdx); // Regra para exibir legenda ou não
-        const fsPadding = { top: 30, right: 50, left: 10, bottom: 40 };
-        const isL = document.body.classList.contains('light-mode');
-        const fsColor = isL ? '#000000' : '#FFFFFF';
-        
-        const cfg = { 
-            type: targetChart.config.type, data: JSON.parse(JSON.stringify(targetChart.config.data)), 
-            options: { ...targetChart.config.options, maintainAspectRatio: false, plugins: { ...targetChart.config.options.plugins, legend: { display: showLegend, position:'bottom', labels:{color:fsColor, filter: (i)=>i.text!=='Total'} } }, layout: { padding: fsPadding } } 
-        };
-        // Ativa labels laterais apenas para gráfico de analistas empilhado (idx 5 e 10 se aplicável, mas 10 é horizontal simples)
-        if(fsIdx === 5) cfg.options.plugins.sideLabels = sideLabelsPlugin;
-        fsChart = new Chart(ctx, cfg);
-    } 
-    // Tabelas (6 e 7)
-    else {
-        if(fsChart) fsChart.destroy(); cvsWrap.style.display = 'none'; tblWrap.classList.add('active');
-        const srcId = fsIdx === 6 ? 'tableAssignee' : 'tableUnit';
-        document.getElementById('fsTable').innerHTML = document.getElementById(srcId).innerHTML;
-    }
-}
-document.addEventListener('keydown', e => { if(document.getElementById('fsModal').classList.contains('open')) { if(e.key=='ArrowLeft')changeFullscreenChart(-1); if(e.key=='ArrowRight')changeFullscreenChart(1); if(e.key=='Escape')closeFullscreenMode(); } });
+// --- 6. FUNÇÕES GERAIS E NAVEGAÇÃO ---
 
 function handleChartClick(chartId, index, datasetIndex, chart) {
     const clickedLabel = chart.data.labels[index];
     const y = yearSelect.value;
     const m = monthSelect.value;
-    const isMonthlyTab = document.getElementById('tab-mensal').classList.contains('active');
-    
+    const norm = (str) => str ? str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
     let filtered = allTickets;
-    const isDeliveryChart = ['monthlySlaChart', 'slaChart', 'monthlyUnitsChart', 'locationChart', 'monthlyAssigneeChart', 'assigneeChart'].includes(chartId);
-
-    if (isMonthlyTab) {
-        if (isDeliveryChart) {
+    const isMonthlyChart = [ 'monthly', 'mUnitChart', 'mCCusto', 'mRole', 'mReq', 'mCat' ].some(token => chartId.includes(token));
+    if (isMonthlyChart) {
+        const isDelivery = ['monthlySla', 'monthlyUnits', 'monthlyAssignee', 'mUnitChart'].some(t => chartId.includes(t));
+        if (isDelivery) {
             filtered = allTickets.filter(t => {
-                const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(t.status.toLowerCase());
-                return isRes && t.updated && t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
+                const s = t.status.toLowerCase(); 
+                const isRes = ['resolvido','fechada','concluído','done'].some(x => s.includes(x));
+                return isRes && !s.includes('cancelado') && t.updated && t.updated.getFullYear().toString() === y && (t.updated.getMonth() + 1).toString() === m;
             });
         } else {
             filtered = allTickets.filter(t => t.created && t.created.getFullYear().toString() === y && (t.created.getMonth() + 1).toString() === m);
         }
     }
-
-    if (chartId === 'monthlyStatusChart' || chartId === 'statusChart') {
-        filtered = filtered.filter(t => t.status === clickedLabel);
-        document.getElementById('ddTitle').innerText = `Chamados - Status: ${clickedLabel}`;
+    let drillTitle = `Detalhes: ${clickedLabel}`;
+    if (chartId.includes('Status')) { filtered = filtered.filter(t => t.status === clickedLabel); drillTitle = `Status: ${clickedLabel}`; }
+    else if (chartId.includes('Type')) { filtered = filtered.filter(t => t.type === clickedLabel); drillTitle = `Tipo: ${clickedLabel}`; }
+    else if (chartId.includes('Category')) {
+        if(clickedLabel === 'Demais Categorias' || clickedLabel === 'Categorias de baixo volume') { drillTitle = `${clickedLabel} (Lista)`; } 
+        else { filtered = filtered.filter(t => t.category === clickedLabel); drillTitle = `Categoria: ${clickedLabel}`; }
     }
-    else if (chartId === 'monthlyTypeChart' || chartId === 'typeChart') {
-        filtered = filtered.filter(t => t.type === clickedLabel);
-        document.getElementById('ddTitle').innerText = `Chamados - Tipo: ${clickedLabel}`;
-    }
-    else if (chartId === 'monthlySlaChart' || chartId === 'slaChart') {
+    else if (chartId.includes('Sla')) {
         const isOk = clickedLabel === 'No Prazo';
         filtered = filtered.filter(t => {
             if(!t.deadline) return false;
-            const isRes = ['resolvido','fechada','concluído','done','fechado'].includes(t.status.toLowerCase());
+            const isRes = ['resolvido','fechada','concluído'].some(x => t.status.toLowerCase().includes(x));
             const ok = (isRes && t.updated <= t.deadline) || (!isRes && new Date() <= t.deadline);
             return isOk ? ok : !ok;
         });
-        document.getElementById('ddTitle').innerText = `Chamados - SLA: ${clickedLabel}`;
+        drillTitle = `SLA: ${clickedLabel}`;
     }
     else if (chartId === 'monthlyUnitsChart' || chartId === 'locationChart') {
         filtered = filtered.filter(t => t.location === clickedLabel);
-        document.getElementById('ddTitle').innerText = `Chamados - Unidade: ${clickedLabel}`;
+        drillTitle = `Unidade: ${clickedLabel}`;
     }
-    else if (chartId === 'monthlyAssigneeChart' || chartId === 'assigneeChart') {
+    else if (chartId === 'monthlyAssigneeChart') { 
         const datasetLabel = chart.data.datasets[datasetIndex].label;
-        filtered = filtered.filter(t => t.assignee === clickedLabel);
-        if(datasetLabel !== 'Total') {
-            filtered = filtered.filter(t => t.location === datasetLabel);
-            document.getElementById('ddTitle').innerText = `Chamados - ${clickedLabel} em ${datasetLabel}`;
+        if(datasetLabel && datasetLabel !== 'Total') {
+            filtered = filtered.filter(t => t.assignee === clickedLabel && t.location === datasetLabel);
+            drillTitle = `${clickedLabel} em ${datasetLabel}`;
         } else {
-            document.getElementById('ddTitle').innerText = `Chamados - ${clickedLabel} (Total)`;
+            filtered = filtered.filter(t => t.assignee === clickedLabel);
+            drillTitle = `Analista: ${clickedLabel}`;
+        }
+    }
+    else if (chartId === 'assigneeChart') { 
+        filtered = filtered.filter(t => t.assignee === clickedLabel);
+        drillTitle = `Analista: ${clickedLabel}`;
+    }
+    else if (chartId.includes('Requester')) {
+        filtered = filtered.filter(t => t.reporter === clickedLabel);
+        drillTitle = `Solicitante: ${clickedLabel}`;
+    }
+    else if (chartId.includes('CCusto')) {
+        filtered = filtered.filter(t => t.ccusto === clickedLabel);
+        drillTitle = `Centro de Custo: ${clickedLabel}`;
+    }
+    else if (chartId.includes('Role')) {
+        filtered = filtered.filter(t => t.role === clickedLabel);
+        drillTitle = `Função: ${clickedLabel}`;
+    }
+    else if (chartId.includes('UnitChart')) {
+        filtered = filtered.filter(t => t.reporter === clickedLabel);
+        let targetUnit = "";
+        if(chartId.includes('Extrema')) targetUnit = "Extrema";
+        else if(chartId.includes('Serra')) targetUnit = "Serra";
+        else if(chartId.includes('Embu')) targetUnit = "Embu DCR";
+        else if(chartId.includes('Vila')) targetUnit = "Vila Olímpia";
+        else if(chartId.includes('Duque')) targetUnit = "Duque de Caxias";
+        if(targetUnit) {
+            const uNorm = norm(targetUnit);
+            filtered = filtered.filter(t => {
+                const locNorm = norm(t.location);
+                return locNorm.includes(uNorm) || (targetUnit === "Vila Olímpia" && locNorm.includes("vila"));
+            });
+            drillTitle = `${clickedLabel} em ${targetUnit}`;
+        } else {
+            drillTitle = `${clickedLabel} em Outras`;
         }
     }
     else if (chartId === 'monthlyChart') {
         filtered = filtered.filter(t => t.created.getDate().toString() === clickedLabel);
-        document.getElementById('ddTitle').innerText = `Chamados do dia ${clickedLabel}/${m}/${y}`;
+        drillTitle = `Dia ${clickedLabel}`;
     }
     else if (chartId === 'trendChart') {
         const [tm, ty] = clickedLabel.split('/');
         const fullY = "20" + ty;
         filtered = allTickets.filter(t => t.created && t.created.getMonth()+1 == tm && t.created.getFullYear() == fullY);
-        document.getElementById('ddTitle').innerText = `Chamados de ${clickedLabel}`;
+        drillTitle = `Período: ${clickedLabel}`;
     }
-    openDrillDown(filtered);
+
+    openDrillDown(filtered, drillTitle);
 }
 
-initCharts(); loadAutoCSV();
+function openTab(evt, tabName) {
+    const tabContents = document.getElementsByClassName("tab-content");
+    for (let i = 0; i < tabContents.length; i++) { tabContents[i].classList.remove("active"); }
+    const tabButtons = document.getElementsByClassName("tab-button");
+    for (let i = 0; i < tabButtons.length; i++) { tabButtons[i].classList.remove("active"); }
+    const target = document.getElementById(tabName);
+    if (target) target.classList.add("active");
+    if (evt && evt.currentTarget) evt.currentTarget.classList.add("active");
+    // Redimensiona gráficos ao trocar de aba
+    setTimeout(() => { Object.values(charts).forEach(c => c && typeof c.resize === 'function' && c.resize()); }, 50);
+}
+
+function downloadCSV() { 
+    if(!allTickets || allTickets.length === 0){ alert("Sem dados."); return; } 
+    const h=["Criado,Status,Responsável,Tipo,Local,Resumo,ID,CCusto,Funcao"]; 
+    const r=allTickets.map(t=>[`${t.created.toLocaleDateString()}`,t.status,t.assignee,t.type,t.location,`"${t.summary}"`,t.id,t.ccusto,t.role].join(',')); 
+    const b=new Blob([h.concat(r).join('\n')],{type:"text/csv"}); 
+    const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download="export_dashboard.csv"; 
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); 
+}
+
+// --- 7. FULLSCREEN E NAVEGAÇÃO TRAVADA ---
+let fsIdx=0, fsChart=null;
+
+const fsTitles = {
+    0: "Volume de Aberturas (Mensal)", 1: "SLA (Entregas)", 2: "Backlog (Status do Mês)", 3: "Tipos (Demanda)", 
+    4: "Top Unidades (Entregas)", 5: "Analistas x Unidade (Entregas)", 
+    8: "Evolução de Chamados (Histórico)", 9: "Demandas por Unidade", 10: "Top Analistas (Volume)", 
+    12: "Cumprimento de Prazos", 13: "Distribuição por Status", 
+    14: "Categorias (Mês)", 15: "Top Solicitantes (Mês)", 16: "Categorias (Geral)", 
+    17: "Top Centros de Custo (Mês)", 18: "Top Funções (Mês)", 
+    19: "Top Centros de Custo (Geral)", 20: "Top Funções (Geral)",
+    21: "Extrema (Mensal)", 22: "Serra (Mensal)", 23: "Embu DCR (Mensal)", 24: "Vila Olímpia (Mensal)", 25: "Duque de Caxias (Mensal)", 26: "Outras (Mensal)",
+    27: "Top Solicitantes (Geral)",
+    28: "Extrema (Geral)", 29: "Serra (Geral)", 30: "Embu DCR (Geral)", 31: "Vila Olímpia (Geral)", 32: "Duque de Caxias (Geral)", 33: "Outras (Geral)",
+    34: "Extrema (Equipe)", 35: "Serra (Equipe)", 36: "Embu DCR (Equipe)", 37: "Vila Olímpia (Equipe)", 38: "Duque de Caxias (Equipe)", 39: "Outras (Equipe)"
+};
+
+// Grupos para navegação travada por aba
+const chartGroups = {
+    'mensal': [0, 1, 2, 3, 4, 14, 15, 17, 18, 5, 21, 22, 23, 24, 25, 26],
+    'geral': [8, 27, 19, 20, 28, 29, 30, 31, 32, 33],
+    'equipe': [9, 10, 16, 34, 35, 36, 37, 38, 39],
+    'status': [12, 13]
+};
+
+function getChartByIndex(i) {
+    const map = { 
+        0: charts.mVol, 1: charts.mSla, 2: charts.mStatus, 3: charts.mType, 4: charts.mUnits, 5: charts.mAss, 
+        8: charts.trend, 9: charts.loc, 10: charts.ass, 
+        12: charts.sla, 13: charts.status, 
+        14: charts.mCat, 15: charts.mReq, 16: charts.cat, 
+        17: charts.mCCusto, 18: charts.mRole, 19: charts.gCCusto, 20: charts.gRole,
+        21: charts.mUnitChartExtrema, 22: charts.mUnitChartSerra, 23: charts.mUnitChartEmbu, 24: charts.mUnitChartVila, 25: charts.mUnitChartDuque, 26: charts.mUnitChartOther,
+        27: charts.reqGlobal,
+        28: charts.gUnitChartExtrema, 29: charts.gUnitChartSerra, 30: charts.gUnitChartEmbu, 31: charts.gUnitChartVila, 32: charts.gUnitChartDuque, 33: charts.gUnitChartOther,
+        34: charts.unitChartExtrema, 35: charts.unitChartSerra, 36: charts.unitChartEmbu, 37: charts.unitChartVila, 38: charts.unitChartDuque, 39: charts.unitChartOther
+    };
+    return map[i];
+}
+
+function openFullscreenMode(i) { 
+    fsIdx = i; 
+    document.getElementById('fsModal').classList.add('open'); 
+    renderFs(); 
+}
+
+function closeFullscreenMode() { document.getElementById('fsModal').classList.remove('open'); }
+
+function changeFullscreenChart(d) { 
+    let currentGroup = null;
+    for (const groupName in chartGroups) {
+        if (chartGroups[groupName].includes(fsIdx)) {
+            currentGroup = chartGroups[groupName];
+            break;
+        }
+    }
+
+    if (!currentGroup) {
+        // Se for tabela ou fora de grupo, não faz nada
+        if(fsIdx === 6 || fsIdx === 7) return; 
+        fsIdx += d; 
+    } else {
+        const currentIndexInGroup = currentGroup.indexOf(fsIdx);
+        const newIndexInGroup = currentIndexInGroup + d;
+        // Trava navegação se tentar sair do grupo
+        if (newIndexInGroup >= 0 && newIndexInGroup < currentGroup.length) {
+            fsIdx = currentGroup[newIndexInGroup];
+        }
+    }
+    renderFs(); 
+}
+
+function renderFs() {
+    document.getElementById('fsChartTitle').innerText = fsTitles[fsIdx] || "Detalhe";
+    const cvsWrap = document.getElementById('fsCanvasWrapper'); 
+    const tblWrap = document.getElementById('fsTableWrapper');
+    
+    const prevBtn = document.querySelector('.fs-prev');
+    const nextBtn = document.querySelector('.fs-next');
+    
+    let currentGroup = null;
+    for (const groupName in chartGroups) { if (chartGroups[groupName].includes(fsIdx)) { currentGroup = chartGroups[groupName]; break; } }
+    
+    if (currentGroup) {
+        const idxInGroup = currentGroup.indexOf(fsIdx);
+        prevBtn.style.opacity = idxInGroup === 0 ? '0.3' : '1';
+        prevBtn.style.pointerEvents = idxInGroup === 0 ? 'none' : 'auto';
+        
+        nextBtn.style.opacity = idxInGroup === currentGroup.length - 1 ? '0.3' : '1';
+        nextBtn.style.pointerEvents = idxInGroup === currentGroup.length - 1 ? 'none' : 'auto';
+        prevBtn.style.display = 'block'; nextBtn.style.display = 'block';
+    } else {
+        prevBtn.style.display = 'none'; nextBtn.style.display = 'none';
+    }
+
+    if(fsIdx !== 6 && fsIdx !== 7) {
+        cvsWrap.style.display = 'block'; tblWrap.classList.remove('active');
+        const targetChart = getChartByIndex(fsIdx);
+        
+        if(targetChart) {
+            const ctx = document.getElementById('fsCanvas'); if(fsChart) fsChart.destroy();
+            const isLight = document.body.classList.contains('light-mode'); 
+            // CORREÇÃO: No Dark Mode, fonte BRANCA
+            const fsColor = isLight ? '#000000' : '#FFFFFF';
+            
+            const cfg = { 
+                type: targetChart.config.type, 
+                data: JSON.parse(JSON.stringify(targetChart.config.data)), 
+                options: { 
+                    ...targetChart.config.options, 
+                    maintainAspectRatio: false, 
+                    plugins: { 
+                        ...targetChart.config.options.plugins, 
+                        legend: { 
+                            display: true, 
+                            position: 'bottom', 
+                            labels: { 
+                                color: fsColor, 
+                                filter: (i)=>i.text!=='Total', 
+                                font: { size: 14 } 
+                            } 
+                        },
+                        datalabels: { ...targetChart.config.options.plugins.datalabels, font: { size: 14 } }
+                    }, 
+                    layout: { padding: 20 },
+                    scales: targetChart.config.options.scales, // Mantém escalas (grace)
+                    onClick: (evt, elements, chart) => {
+                        if (elements.length > 0) {
+                            const index = elements[0].index;
+                            const datasetIndex = elements[0].datasetIndex;
+                            handleChartClick(targetChart.canvas.id, index, datasetIndex, chart);
+                        }
+                    }
+                } 
+            };
+            
+            // Força cor da fonte e grid no fullscreen se estiver dark (default)
+            if (!isLight && cfg.options.scales) {
+                if (cfg.options.scales.x) { 
+                    cfg.options.scales.x.ticks = { ...cfg.options.scales.x.ticks, color: '#FFF' };
+                    cfg.options.scales.x.grid = { ...cfg.options.scales.x.grid, color: '#444' };
+                }
+                if (cfg.options.scales.y) { 
+                    cfg.options.scales.y.ticks = { ...cfg.options.scales.y.ticks, color: '#FFF' };
+                    cfg.options.scales.y.grid = { ...cfg.options.scales.y.grid, color: '#444' };
+                }
+            }
+
+            if(fsIdx === 5) { cfg.options.plugins.sideLabels = window.sideLabelsPlugin; }
+            fsChart = new Chart(ctx, cfg);
+        }
+    } else { 
+        if(fsChart) fsChart.destroy(); 
+        cvsWrap.style.display = 'none'; tblWrap.classList.add('active'); 
+        const srcId = fsIdx === 6 ? 'tableAssignee' : 'tableUnit'; 
+        document.getElementById('fsTable').innerHTML = document.getElementById(srcId).innerHTML; 
+    }
+}
+document.addEventListener('keydown', e => { if(document.getElementById('fsModal').classList.contains('open')) { if(e.key=='ArrowLeft')changeFullscreenChart(-1); if(e.key=='ArrowRight')changeFullscreenChart(1); if(e.key=='Escape')closeFullscreenMode(); } });
+
+// --- 8. DRILL DOWN ---
+let currentDrillData = [];
+let drillPage = 1;
+const DRILL_PER_PAGE = 10;
+
+function openDrillDown(data, title) {
+    currentDrillData = data;
+    drillPage = 1;
+    document.getElementById('ddTitle').innerText = title;
+    document.getElementById('drillDownModal').classList.add('open');
+    renderDrillDownTable();
+}
+
+function closeDrillDown() {
+    document.getElementById('drillDownModal').classList.remove('open');
+}
+
+function changeDrillDownPage(d) {
+    const maxPage = Math.ceil(currentDrillData.length / DRILL_PER_PAGE) || 1;
+    drillPage += d;
+    if (drillPage < 1) drillPage = 1;
+    if (drillPage > maxPage) drillPage = maxPage;
+    renderDrillDownTable();
+}
+
+function renderDrillDownTable() {
+    const tbody = document.querySelector('#ddTable tbody');
+    tbody.innerHTML = '';
+    const total = currentDrillData.length;
+    const maxPage = Math.ceil(total / DRILL_PER_PAGE) || 1;
+    const start = (drillPage - 1) * DRILL_PER_PAGE;
+    const end = start + DRILL_PER_PAGE;
+    const pageData = currentDrillData.slice(start, end);
+
+    document.getElementById('pageInfo').innerText = `Página ${drillPage} de ${maxPage} (${total} registros)`;
+    document.getElementById('btnPrev').disabled = drillPage === 1;
+    document.getElementById('btnNext').disabled = drillPage === maxPage;
+
+    pageData.forEach(t => {
+        const tr = document.createElement('tr');
+        
+        let slaBadge = '<span class="status-pill pill-gray">-</span>';
+        if(t.deadline) {
+            const isRes = ['resolvido','fechada','concluído'].some(x => t.status.toLowerCase().includes(x));
+            const isOk = (isRes && t.updated <= t.deadline) || (!isRes && new Date() <= t.deadline);
+            slaBadge = isOk 
+                ? '<span class="status-pill pill-success">No Prazo</span>' 
+                : '<span class="status-pill pill-danger">Atrasado</span>';
+        }
+
+        tr.innerHTML = `
+            <td>${t.id}</td>
+            <td>${t.summary}</td>
+            <td>${t.status}</td>
+            <td>${t.assignee}</td>
+            <td>${slaBadge}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// --- 9. TEMA E CORES ---
+
+function updateChartTheme() {
+    const isLight = document.body.classList.contains('light-mode');
+    
+    // Se isLight for false (Dark Mode), texto deve ser BRANCO
+    const txtC = isLight ? '#000000' : '#FFFFFF'; 
+    const gridC = isLight ? '#DADCE0' : '#444'; 
+    
+    // Força padrões globais
+    Chart.defaults.color = txtC;
+    Chart.defaults.borderColor = gridC;
+
+    Object.values(charts).forEach(c => {
+        if (!c) return;
+        if (c.options.scales) {
+            if (c.options.scales.x) {
+                c.options.scales.x.grid.color = gridC;
+                c.options.scales.x.ticks.color = txtC;
+            }
+            if (c.options.scales.y) {
+                c.options.scales.y.grid.color = gridC;
+                c.options.scales.y.ticks.color = txtC;
+            }
+        }
+        if (c.options.plugins && c.options.plugins.legend) {
+            c.options.plugins.legend.labels.color = txtC;
+        }
+        c.update();
+    });
+}
+
+function toggleTheme() {
+    document.body.classList.toggle('light-mode');
+    const isLight = document.body.classList.contains('light-mode');
+    document.getElementById('themeIcon').innerText = isLight ? '🌙' : '☀️';
+    updateChartTheme();
+}
+
+function handleMetricClick(label, metricType, context) {
+    console.log(`Clique em métrica: ${label}, ${metricType}, ${context}`);
+}
+
+// --- 10. INICIALIZAÇÃO ---
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(initCharts, 100);
+    setTimeout(loadAutoCSV, 500);
+});
