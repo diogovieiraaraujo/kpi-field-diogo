@@ -514,23 +514,122 @@ function calculateTeamInsights(data) {
     const grid = document.getElementById('team-insights-grid'); 
     if(grid) grid.innerHTML = ""; else return; 
     
-    if(!data || data.length === 0) { grid.innerHTML = "<p style='color:var(--text-muted); text-align:center; width:100%; grid-column:1/-1;'>Sem dados neste mês.</p>"; return; }
-    const stats = {}; let totalTeamTickets = 0;
+    if(!data || data.length === 0) { 
+        grid.innerHTML = "<p style='color:var(--text-muted); text-align:center; width:100%; grid-column:1/-1;'>Sem dados neste mês para gerar insights.</p>"; 
+        return; 
+    }
+
+    const stats = {}; 
+    let totalTeamTickets = 0;
+    
+    // 1. Coleta estatísticas individuais
     data.forEach(t => { 
         if (!t.assignee || isExcluded(t.assignee) || t.assignee === 'N/A') return; 
         if(!stats[t.assignee]) stats[t.assignee] = { count: 0, slaOk: 0, slaTot: 0 }; 
-        stats[t.assignee].count++; totalTeamTickets++; 
-        if(t.deadline) { stats[t.assignee].slaTot++; if(t.updated <= t.deadline) stats[t.assignee].slaOk++; } 
+        stats[t.assignee].count++; 
+        totalTeamTickets++; 
+        if(t.deadline) { 
+            stats[t.assignee].slaTot++; 
+            if(t.updated <= t.deadline) stats[t.assignee].slaOk++; 
+        } 
     });
-    const activeAnalysts = Object.keys(stats).length; const avgVol = activeAnalysts ? totalTeamTickets / activeAnalysts : 0;
+
+    // 2. Calcula médias da equipe
+    const activeAnalysts = Object.keys(stats).length; 
+    const avgVol = activeAnalysts ? totalTeamTickets / activeAnalysts : 0;
+
+    // 3. Gera os Cards
     Object.entries(stats).sort((a,b) => b[1].count - a[1].count).forEach(([name, s]) => {
         const sla = s.slaTot ? (s.slaOk / s.slaTot) * 100 : 0;
-        let profile = "Operacional", cardBorderColor = "var(--border-color)", icon = "👤";
-        if (sla >= 95) { profile = "Perfil Técnico"; cardBorderColor = "var(--success)"; icon = "🛡️"; } else if (s.count > avgVol * 1.2) { profile = "Perfil Agilidade"; cardBorderColor = "var(--brand-blue)"; icon = "⚡"; }
-        let strongTxt = "Consistência.", weakTxt = "Monitorar.", actionTxt = "Acompanhar.";
-        if(sla >= 95) strongTxt = "Alta confiabilidade."; else if(s.count > avgVol) strongTxt = "Alta vazão.";
-        if(sla < 85) { weakTxt = `SLA (${sla.toFixed(0)}%) baixo.`; actionTxt = "Priorizar prazos."; } else if(s.count < avgVol * 0.6) { weakTxt = "Volume baixo."; actionTxt = "Puxar backlog."; }
-        grid.innerHTML += `<div class="insight-card" style="border-left-color: ${cardBorderColor}"><div class="ic-header-modern"><div class="ic-avatar">${icon}</div><div class="ic-info"><h4>${name}</h4><span>${profile}</span></div></div><div class="ic-blocks-row"><div class="ic-block bg-success-light"><div class="ic-block-title text-success">✔ Forte</div><div>${strongTxt}</div></div><div class="ic-block ${sla < 85 ? 'bg-danger-light' : 'bg-warning-light'}"><div class="ic-block-title ${sla < 85 ? 'text-danger' : 'text-warning'}">⚠ Atenção</div><div>${weakTxt}</div></div></div></div>`;
+        const missedSla = s.slaTot - s.slaOk; // Quantos estouraram
+        
+        // Cálculo de % em relação à média da equipe
+        const volDiff = avgVol > 0 ? ((s.count - avgVol) / avgVol) * 100 : 0;
+        const volDiffStr = volDiff > 0 ? `+${volDiff.toFixed(0)}%` : `${volDiff.toFixed(0)}%`;
+
+        // Definição do Perfil
+        let profile = "Operacional"; 
+        let cardBorderColor = "var(--border-color)"; 
+        let icon = "👤";
+
+        if (sla >= 95 && s.count > avgVol * 0.8) { 
+            profile = "Referência Técnica"; 
+            cardBorderColor = "var(--success)"; 
+            icon = "🛡️"; 
+        } else if (s.count > avgVol * 1.2) { 
+            profile = "Tração / Agilidade"; 
+            cardBorderColor = "var(--brand-blue)"; 
+            icon = "⚡"; 
+        } else if (sla < 70) {
+            profile = "Em Risco";
+            cardBorderColor = "var(--danger)";
+            icon = "🚑";
+        }
+
+        // --- LÓGICA DE TEXTOS DINÂMICOS (Melhoria Solicitada) ---
+        
+        // Texto FORTE (Verde)
+        let strongTitle = "✔ Ponto Forte";
+        let strongTxt = "";
+        
+        if(sla >= 95) {
+            strongTitle = "✔ Confiabilidade";
+            strongTxt = `Qualidade premium: apenas <b>${missedSla}</b> atraso(s) em ${s.count} entregas.`;
+        } else if(s.count > avgVol) {
+            strongTitle = "✔ Alta Vazão";
+            strongTxt = `Produzindo <b>${volDiffStr}</b> acima da média da equipe (${s.count} tickets).`;
+        } else {
+            strongTitle = "✔ Constância";
+            strongTxt = `Mantendo fluxo regular com <b>${s.count}</b> entregas no período.`;
+        }
+
+        // Texto ATENÇÃO (Vermelho/Amarelo)
+        let weakTitle = "⚠ Atenção";
+        let weakTxt = "";
+        let weakClass = "bg-warning-light"; // Fundo padrão amarelo
+        let weakTextClass = "text-warning"; // Texto padrão laranja
+
+        if(sla < 75) {
+            weakClass = "bg-danger-light";
+            weakTextClass = "text-danger";
+            weakTitle = "⚠ SLA Crítico";
+            weakTxt = `Gargalo: <b>${missedSla}</b> chamados vencidos. Requer plano de ação.`;
+        } else if (sla < 90) {
+            weakTitle = "⚠ Prazo em Risco";
+            weakTxt = `SLA de ${sla.toFixed(0)}%. <b>${missedSla}</b> chamados fora do prazo.`;
+        } else if (s.count < avgVol * 0.6) {
+            weakClass = "bg-info-light"; // Azul claro para indicar volume baixo (não necessariamente ruim se for férias)
+            weakTextClass = "text-normal";
+            weakTitle = "ℹ Baixo Volume";
+            weakTxt = `Produção <b>${Math.abs(volDiff).toFixed(0)}%</b> abaixo da média. Ocioso ou bloqueado?`;
+        } else {
+            weakClass = "pill-neutral";
+            weakTextClass = "text-muted";
+            weakTitle = "ℹ Monitorar";
+            weakTxt = "Métricas estáveis. Acompanhar backlog futuro.";
+        }
+
+        // Montagem do HTML
+        grid.innerHTML += `
+            <div class="insight-card" style="border-left-color: ${cardBorderColor}">
+                <div class="ic-header-modern">
+                    <div class="ic-avatar">${icon}</div>
+                    <div class="ic-info">
+                        <h4>${name}</h4>
+                        <span>${profile}</span>
+                    </div>
+                </div>
+                <div class="ic-blocks-row">
+                    <div class="ic-block bg-success-light">
+                        <div class="ic-block-title text-success">${strongTitle}</div>
+                        <div>${strongTxt}</div>
+                    </div>
+                    <div class="ic-block ${weakClass}">
+                        <div class="ic-block-title ${weakTextClass}">${weakTitle}</div>
+                        <div>${weakTxt}</div>
+                    </div>
+                </div>
+            </div>`;
     });
 }
 
