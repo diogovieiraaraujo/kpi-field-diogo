@@ -2,32 +2,32 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; margin: 0; padding: 0; overflow-x: hidden; }
 
-/* --- PALETA DE CORES --- */
+/* --- PALETA DE CORES INFRACOMMERCE --- */
 :root { 
-    --bg-body: #121212; 
-    --bg-card: #1E1E1E; 
+    --bg-body: #1a1625; 
+    --bg-card: #2a2435; 
     --text-main: #FFFFFF; 
-    --text-muted: #CCCCCC; 
-    --text-accent: #B39DDB; 
-    --border-color: #333; 
-    --brand-accent: #8680b1; 
-    --brand-blue: #448AFF; 
-    --success: #00E676; 
-    --warning: #FFB74D; 
-    --danger: #FF5252; 
+    --text-muted: #b8a7d1; 
+    --text-accent: #d4c3f0; 
+    --border-color: #3d3447; 
+    --brand-accent: #4a3b5c; 
+    --brand-blue: #5e4d7a; 
+    --success: #6dd47e; 
+    --warning: #f4a261; 
+    --danger: #e76f51; 
 }
 
 body.light-mode { 
-    --bg-body: #F0F2F5; 
+    --bg-body: #f5f0fa; 
     --bg-card: #FFFFFF; 
-    --text-main: #000000; 
-    --text-muted: #555555; 
-    --text-accent: #5E35B1; 
-    --border-color: #DADCE0; 
-    --brand-accent: #5E35B1; 
-    --brand-blue: #0055FF;
-    --success: #00C853; 
-    --warning: #EF6C00;
+    --text-main: #2a1e3e; 
+    --text-muted: #6b5883; 
+    --text-accent: #4a3b5c; 
+    --border-color: #e0d5ed; 
+    --brand-accent: #4a3b5c; 
+    --brand-blue: #5e4d7a;
+    --success: #4caf50; 
+    --warning: #f4a261;
 }
 
 body { font-family: 'Montserrat', sans-serif; background-color: var(--bg-body); color: var(--text-main); font-size: 14px; transition: background-color 0.3s, color 0.3s; }
@@ -38,10 +38,10 @@ body { font-family: 'Montserrat', sans-serif; background-color: var(--bg-body); 
 .text-warning { color: var(--warning) !important; }
 .text-danger { color: var(--danger) !important; }
 .text-normal { color: var(--text-main) !important; }
-.bg-success-light { background-color: rgba(0, 200, 83, 0.15); color: var(--success); }
-.bg-danger-light { background-color: rgba(255, 82, 82, 0.15); color: var(--danger); }
-.bg-warning-light { background-color: rgba(255, 183, 77, 0.15); color: var(--warning); }
-.bg-info-light { background-color: rgba(68, 138, 255, 0.15); color: var(--brand-blue); }
+.bg-success-light { background-color: rgba(109, 212, 126, 0.15); color: var(--success); }
+.bg-danger-light { background-color: rgba(231, 111, 81, 0.15); color: var(--danger); }
+.bg-warning-light { background-color: rgba(244, 162, 97, 0.15); color: var(--warning); }
+.bg-info-light { background-color: rgba(94, 77, 122, 0.15); color: var(--brand-blue); }
 
 /* KPI CARDS VIVOS */
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
@@ -83,11 +83,12 @@ body { font-family: 'Montserrat', sans-serif; background-color: var(--bg-body); 
 
 /* PILLS DE STATUS (Com Cursor de Ajuda) */
 .status-pill { padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; display: inline-block; text-align: center; min-width: 90px; cursor: help; }
-.pill-success { background-color: rgba(0, 200, 83, 0.15); color: var(--success); }
-.pill-warning { background-color: rgba(255, 183, 77, 0.15); color: #F57C00; }
-.pill-info { background-color: rgba(68, 138, 255, 0.15); color: var(--brand-blue); }
+.pill-success { background-color: rgba(109, 212, 126, 0.15); color: var(--success); }
+.pill-warning { background-color: rgba(244, 162, 97, 0.15); color: #f4a261; }
+.pill-info { background-color: rgba(94, 77, 122, 0.15); color: var(--brand-blue); }
 .pill-neutral { background-color: rgba(158, 158, 158, 0.15); color: var(--text-muted); }
-.pill-danger { background-color: rgba(255, 82, 82, 0.15); color: var(--danger); }
+.pill-danger { background-color: rgba(231, 111, 81, 0.15); color: var(--danger); }
+.pill-gray { background-color: rgba(158, 158, 158, 0.15); color: var(--text-muted); }
 .clickable-cell { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 4px; transition: color 0.2s; }
 .clickable-cell:hover { color: var(--brand-blue); font-weight: 800; }
 
@@ -101,7 +102,7 @@ header { background-color: var(--bg-card); padding: 15px 20px; border-radius: 12
 .header-actions { display: flex; gap: 8px; }
 .btn-action { background-color: var(--brand-blue); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: transform 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.85rem; white-space: nowrap; }
 .btn-action:hover { opacity: 0.9; transform: translateY(-2px); }
-.btn-theme { background-color: transparent; border: 1px solid var(--border-color); color: var(--text-main); } .btn-export { background-color: #2e7d32; } #csvInput { display: none; }
+.btn-theme { background-color: transparent; border: 1px solid var(--border-color); color: var(--text-main); } .btn-export { background-color: #4caf50; } #csvInput { display: none; }
 #statusLog { background: #d1e7dd; color: #0f5132; padding: 10px; border-radius: 6px; margin-bottom: 15px; font-size: 0.85rem; border: 1px solid #badbcc; display: none; text-align: center; }
 
 /* TABS & GRÁFICOS */
