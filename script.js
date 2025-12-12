@@ -1,9 +1,9 @@
 // =========================================================================
-// SCRIPT.JS - VERSÃO INTEGRADA COM GOOGLE SHEETS API
+// SCRIPT.JS - VERSÃO TURBO (MATRIZ + CACHE)
 // =========================================================================
 
-// 👇👇👇 COLE SUA URL DO APPS SCRIPT AQUI DENTRO DAS ASPAS 👇👇👇
-const API_URL = "https://script.google.com/macros/s/AKfycbz2TheRMoNWseqOUDzLxrpOx23WlkDotiU3il-oNXVHMsLRKk5FIaUBYyIzV4qfgdJd1A/exec";
+// 👇👇👇 COLE SUA URL DO APPS SCRIPT AQUI 👇👇👇
+const API_URL = "https://script.google.com/macros/s/AKfycbzc1yMuNm7u8EjvEPeuui-6f-mCnKADqY8erBZNlXlQkxRzqmfA8GQbdD-vkT029zbCDQ/exec";
 
 // --- 1. CONFIGURAÇÃO E UTILS ---
 
@@ -22,7 +22,6 @@ function logMsg(msg, isError=false) {
 
 const distinctColors = ['#0055FF', '#D32F2F', '#00C853', '#F57C00', '#7B1FA2', '#00ACC1', '#C2185B', '#AFB42B', '#5D4037', '#616161', '#455A64', '#E64A19', '#512DA8', '#1976D2', '#388E3C', '#FBC02D', '#8E24AA', '#0288D1', '#689F38', '#E91E63'];
 
-// LISTA DE NOMES IGNORADOS
 const IGNORED_NAMES = [
     'Automation for Jira', 'JEFERSON PITINGA NOGUEIRA', 'moises.cavalcante', 'MARIANNA LIRA MEDINA',
     'Fabiana Ferreira Garcia de Oliveira', 'Joao Paulo de Macedo Torquato', 'Ramon Marchi',
@@ -39,7 +38,6 @@ const isExcluded = (name) => {
 const STORAGE_KEY = 'ic_dashboard_csv_data';
 let allTickets = [], monthlyData = {}, charts = {};
 
-// --- 2. PLUGIN GLOBAL PARA FULLSCREEN ---
 window.sideLabelsPlugin = {
     id: 'sideLabels',
     afterDatasetsDraw(chart, args, options) {
@@ -152,27 +150,22 @@ function initCharts() {
     updateChartTheme();
 }
 
-// --- 4. INTEGRAÇÃO E PARSER (GOOGLE SHEETS) ---
+// --- 4. CARREGAMENTO OTIMIZADO ---
 
-// Função mantida para o input file (backup manual)
 function handleFileSelect(evt) { 
     const file = evt.target.files[0]; 
     if(!file) return; 
     document.getElementById('currentDate').innerText = new Date().toLocaleString('pt-BR');
     const r = new FileReader(); 
     r.onload = (e) => {
-        const content = e.target.result;
-        // Salva backup local caso precise
-        try { localStorage.setItem(STORAGE_KEY, content); } catch(err) {}
+        try { localStorage.setItem(STORAGE_KEY, e.target.result); } catch(err) {}
         logMsg("Lendo arquivo local...");
-        setTimeout(() => processCSV(content), 100); 
+        setTimeout(() => processCSV(e.target.result), 100); 
     };
     r.readAsText(file); 
 }
 
-// NOVA FUNÇÃO: Carrega da API do Google
 async function loadFromGoogle() {
-    // Se não tiver URL, tenta cache local ou fallback
     if (!API_URL || API_URL.includes("SUA_URL")) {
         logMsg("Modo Offline (API não configurada).", true);
         const savedData = localStorage.getItem(STORAGE_KEY);
@@ -180,20 +173,21 @@ async function loadFromGoogle() {
         return;
     }
 
-    logMsg("Sincronizando com a Planilha...");
+    logMsg("Sincronizando");
     try {
         const response = await fetch(API_URL);
         if (!response.ok) throw new Error("Erro na conexão");
-        const jsonData = await response.json();
+        
+        // Agora recebemos uma matriz de arrays, não objetos
+        const rawMatrix = await response.json();
 
-        if (jsonData.error) throw new Error(jsonData.error);
-        if (!Array.isArray(jsonData) || jsonData.length === 0) throw new Error("Planilha vazia");
+        if (rawMatrix.error) throw new Error(rawMatrix.error);
+        if (!Array.isArray(rawMatrix) || rawMatrix.length < 2) throw new Error("Planilha vazia ou formato inválido");
 
-        processAPIData(jsonData);
+        processAPIData(rawMatrix);
         
     } catch (error) {
         logMsg("Erro ao buscar dados: " + error.message, true);
-        // Fallback para cache local se falhar a internet
         const savedData = localStorage.getItem(STORAGE_KEY);
         if (savedData) {
             logMsg("Usando cache local devido a erro.", true);
@@ -208,12 +202,10 @@ function clearLocalData() {
     setTimeout(() => location.reload(), 500); 
 }
 
-// Parser de data DD/MM/YYYY (reutilizado)
 const parseDt = (s) => { 
     if(!s) return null; 
     try {
         let cleanS = String(s).replace(/"/g,'').trim();
-        // Remove hora se houver (ex: 12/05/2025 14:00)
         let parts = cleanS.split(' ')[0].split('/');
         if (parts.length < 3) parts = cleanS.split(' ')[0].split('-');
         if (parts.length >= 3) {
@@ -228,45 +220,62 @@ const parseDt = (s) => {
     } catch(e) { return null; }
 };
 
-// NOVA FUNÇÃO: Processa o JSON da API e mapeia para o sistema
-function processAPIData(jsonRows) {
+// NOVA FUNÇÃO: PROCESSA MATRIZ CRUA (MUITO MAIS RÁPIDO)
+function processAPIData(matrix) {
+    // Linha 0 são os cabeçalhos
+    const headers = matrix[0].map(h => String(h).trim().toLowerCase());
+    
+    // Mapeia índices das colunas uma única vez
+    const map = {
+        created: headers.findIndex(h=>h.includes('criado')),
+        updated: headers.findIndex(h=>h.includes('atualizado')),
+        deadline: headers.findIndex(h=>h.includes('limite')||h.includes('due')),
+        status: headers.findIndex(h=>h.includes('status')),
+        assignee: headers.findIndex(h=>h.includes('respons')||h.includes('assignee')),
+        type: headers.findIndex(h=>h.includes('tipo')),
+        loc: headers.findIndex(h=>(h.includes('office')||h.includes('local')) && !h.includes('categor')),
+        id: headers.findIndex(h=>h.includes('chave')||h.includes('key')),
+        summary: headers.findIndex(h=>h.includes('resumo')),
+        reporter: headers.findIndex(h=>h.includes('relator')),
+        category: headers.findIndex(h=>h.includes('category')||h.includes('categor')),
+        ccusto: headers.findIndex(h=>h.includes('ccusto')||h.includes('centro')),
+        role: headers.findIndex(h=>h.includes('funcao')||h.includes('função'))
+    };
+
     const data = [];
     let maxDate = 0;
 
-    // Mapeamento das chaves do JSON (baseado nos cabeçalhos da planilha)
-    // Keys em minúsculo conforme o script do Google Apps Script gera
-    jsonRows.forEach((row, i) => {
-        // Mapeamento explícito das colunas informadas
-        const cDt = parseDt(row['Criado'] || row['criado']);
-        const uDt = parseDt(row['Atualizado(a)'] || row['atualizado(a)'] || row['atualizado']);
-        const dDt = parseDt(row['Data limite'] || row['data limite']);
+    // Loop direto na matriz (começando da linha 1)
+    for (let i = 1; i < matrix.length; i++) {
+        const row = matrix[i];
+        if (row.length < 3) continue;
 
-        if (cDt && cDt.getTime() > maxDate) maxDate = cDt.getTime();
-
-        const clean = (val) => val ? String(val).trim() : 'N/A';
-
-        // Só adiciona se tiver data de criação válida
+        // Pega valor pelo índice (acesso direto é instantâneo)
+        const cDt = parseDt(row[map.created]);
+        
         if (cDt) {
+            if (cDt.getTime() > maxDate) maxDate = cDt.getTime();
+            const clean = (idx) => (idx > -1 && row[idx]) ? String(row[idx]).trim() : 'N/A';
+            
             data.push({
                 created: cDt,
-                updated: uDt,
-                deadline: dDt,
-                status: clean(row['Status'] || row['status']),
-                assignee: clean(row['Responsável'] || row['responsável'] || row['Responsavel']),
-                type: clean(row['Tipo de item'] || row['tipo de item']),
-                location: clean(row['Campo personalizado (Office) (Etiqueta)'] || row['campo personalizado (office) (etiqueta)']) || 'Geral',
-                id: clean(row['Chave da item'] || row['chave da item'] || `REQ-${i}`),
-                summary: clean(row['Resumo'] || row['resumo']) || 'Sem resumo',
-                reporter: clean(row['Relator'] || row['relator']) || 'Desconhecido',
-                category: clean(row['Campo personalizado (Category) (Etiqueta)'] || row['campo personalizado (category) (etiqueta)']) || 'Outros',
-                ccusto: clean(row['CCusto'] || row['ccusto'] || row['Centro de custo']),
-                role: clean(row['Funcao'] || row['funcao'] || row['Função'])
+                updated: parseDt(row[map.updated]),
+                deadline: parseDt(row[map.deadline]),
+                status: clean(map.status),
+                assignee: clean(map.assignee),
+                type: clean(map.type),
+                location: map.loc > -1 ? String(row[map.loc]).trim() : 'Geral',
+                id: map.id > -1 ? String(row[map.id]).trim() : `REQ-${i}`,
+                summary: map.summary > -1 ? String(row[map.summary]).trim() : 'Sem resumo',
+                reporter: map.reporter > -1 ? String(row[map.reporter]).trim() : 'Desconhecido',
+                category: map.category > -1 ? String(row[map.category]).trim() : 'Outros',
+                ccusto: clean(map.ccusto),
+                role: clean(map.role)
             });
         }
-    });
+    }
 
-    if (data.length === 0) { logMsg("Nenhum dado válido processado da API.", true); return; }
-
+    if (data.length === 0) { logMsg("Nenhum dado válido.", true); return; }
     if (maxDate > 0) document.getElementById('currentDate').innerText = new Date(maxDate).toLocaleString('pt-BR');
     
     allTickets = data;
@@ -274,9 +283,8 @@ function processAPIData(jsonRows) {
     logMsg(`Sincronizado: ${data.length} registros.`);
 }
 
-// Mantendo processCSV para fallback de importação manual
 function processCSV(text, isAuto=false) {
-    // Código original do parseCSV manual (mantido para compatibilidade com botão importar)
+    // Mantido para fallback manual
     const cleanText = text.replace(/^\uFEFF/, '');
     const rows = []; let currentRow = []; let currentCell = ''; let insideQuotes = false;
     const firstLineEnd = cleanText.indexOf('\n');
@@ -296,57 +304,8 @@ function processCSV(text, isAuto=false) {
     }
     if (currentCell || currentRow.length > 0) { currentRow.push(currentCell.trim()); rows.push(currentRow); }
     
-    // Mapeamento original (Backup)
     if(rows.length < 2) return;
-    const headers = rows[0].map(h => h.replace(/"/g,'').trim().toLowerCase());
-    // ... (Lógica de mapeamento original omitida para brevidade, mas o parser manual ainda funciona se precisar)
-    // Para simplificar, focamos que a API é o padrão agora.
-    // Se o usuário usar Importar CSV manual, o processamento será via map de indices.
-    
-    // Recria a lógica de índices apenas para o fallback manual
-    const map = { 
-        created: headers.findIndex(h=>h.includes('criado')), 
-        updated: headers.findIndex(h=>h.includes('atualizado')), 
-        deadline: headers.findIndex(h=>h.includes('limite')||h.includes('due')), 
-        status: headers.findIndex(h=>h.includes('status')), 
-        assignee: headers.findIndex(h=>h.includes('respons')||h.includes('assignee')), 
-        type: headers.findIndex(h=>h.includes('tipo')), 
-        loc: headers.findIndex(h=>(h.includes('office')||h.includes('local')) && !h.includes('categor')), 
-        id: headers.findIndex(h=>h.includes('chave')||h.includes('key')),
-        summary: headers.findIndex(h=>h.includes('resumo')),
-        reporter: headers.findIndex(h=>h.includes('relator')),
-        category: headers.findIndex(h=>h.includes('category')||h.includes('categor')),
-        ccusto: headers.findIndex(h=>h.includes('ccusto')), 
-        role: headers.findIndex(h=>h.includes('funcao')||h.includes('função'))
-    };
-
-    const data = [];
-    for(let i=1; i<rows.length; i++) {
-        const row = rows[i]; if(row.length < 3) continue; 
-        const clean = (val) => val ? val.replace(/"/g,'').trim() : 'N/A';
-        const cDt = parseDt(row[map.created]); 
-        const uDt = parseDt(row[map.updated]);
-        const dDt = parseDt(row[map.deadline]);
-        
-        if(cDt) {
-            data.push({ 
-                created: cDt, updated: uDt, deadline: dDt, 
-                status: clean(row[map.status]), 
-                assignee: map.assignee > -1 ? (clean(row[map.assignee])||'N/A') : 'N/A', 
-                type: clean(row[map.type]), 
-                location: map.loc>-1?clean(row[map.loc]):'Geral',
-                id: map.id > -1 ? clean(row[map.id]) : `REQ-${i}`,
-                summary: map.summary > -1 ? clean(row[map.summary]) : 'Sem resumo',
-                reporter: map.reporter > -1 ? clean(row[map.reporter]) : 'Desconhecido',
-                category: map.category > -1 ? clean(row[map.category]) : 'Outros',
-                ccusto: map.ccusto > -1 ? clean(row[map.ccusto]) : 'N/A', 
-                role: map.role > -1 ? clean(row[map.role]) : 'N/A'
-            });
-        }
-    }
-    allTickets = data;
-    recalculateKPIs(data);
-    logMsg("Arquivo manual importado.");
+    processAPIData(rows); // Reutiliza a função otimizada
 }
 
 function calculateBusinessTime(start, end) {
@@ -380,9 +339,6 @@ function getTop10(data, key) {
     });
     return Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0, 10);
 }
-
-// --- 5. LÓGICA DE KPIS E GRÁFICOS ---
-// (MANTIDO EXATAMENTE IGUAL PARA GARANTIR FUNCIONALIDADE PERFEITA)
 
 function recalculateKPIs(data) {
     const s = {trend:{},loc:{},ass:{},type:{},status:{},cat:{},rep:{},slaOk:0,slaTot:0,durSum:0,durCount:0};
@@ -913,9 +869,7 @@ function toggleTheme() {
 
 function handleMetricClick(label, metricType, context) { console.log(`Clique em métrica: ${label}, ${metricType}, ${context}`); }
 
-// --- 10. INICIALIZAÇÃO ---
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initCharts, 100);
-    // Substitui o carregamento local pelo carregamento da API
     setTimeout(loadFromGoogle, 500);
 });
